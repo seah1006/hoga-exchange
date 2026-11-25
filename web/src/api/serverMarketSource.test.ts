@@ -45,7 +45,7 @@ test('재연결 후 첫 최신 bookSnapshot을 받기 전까지 재연결 상태
   expect(received).toHaveLength(1)
   const fresh = { ...fixture.bookSnapshot, seq: 1026, logicalTimeMs: 3601000, phase: 'CallAuction', vi: fixture.vi, expectedPrice: 10050, expectedQuantity: 300 }
   hub.emit('bookSnapshot', JSON.stringify(fresh))
-  expect(states).toEqual(['connecting', 'connected', 'reconnecting', 'connected'])
+  expect(states).toEqual(['connecting', 'syncing', 'connected', 'reconnecting', 'syncing', 'connected'])
   expect(received.at(-1)).toEqual({ type: 'bookSnapshot', data: fresh })
   expect(createHub).toHaveBeenCalledWith('https://example.invalid/hubs/market')
   unsubscribe(); unwatch()

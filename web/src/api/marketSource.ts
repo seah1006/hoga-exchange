@@ -1,6 +1,6 @@
 import type { CancelResponse, Experiment, Explanation, MarketMessage, OrderRequest, OrderResponse, Scenario, StateHash } from './contract'
 
-export type MarketConnection = 'connecting' | 'connected' | 'reconnecting' | 'disconnected'
+export type MarketConnection = 'connecting' | 'syncing' | 'connected' | 'reconnecting' | 'disconnected'
 
 export interface MarketSource {
   subscribeConnection?(handler: (status: MarketConnection) => void): () => void
