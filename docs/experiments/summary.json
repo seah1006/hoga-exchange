@@ -1,0 +1,2179 @@
+{
+  "generatedBy": "dotnet run --project src/Hoga.Experiments -- --batch --out docs/experiments",
+  "seeds": {
+    "from": 1,
+    "to": 100
+  },
+  "durationMs": 240000,
+  "demo": {
+    "scenario": "FatFinger",
+    "seed": 16,
+    "rule": "FatFinger Δ가 중앙값에 가장 가까운 시드, 동률이면 작은 시드"
+  },
+  "scenarios": [
+    {
+      "scenario": "Calm",
+      "deltaQuantiles": {
+        "min": 0,
+        "p25": 0,
+        "median": 0,
+        "p75": 0,
+        "max": 0
+      },
+      "counts": {
+        "viWorse": 0,
+        "tie": 100,
+        "viBetter": 0
+      },
+      "runsEndingInVi": {
+        "viOn": 1,
+        "viOff": 0
+      },
+      "seeds": [
+        {
+          "seed": 1,
+          "minOn": 9090,
+          "minOff": 9090,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 2,
+          "minOn": 9680,
+          "minOff": 9680,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 3,
+          "minOn": 9790,
+          "minOff": 9790,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 4,
+          "minOn": 9760,
+          "minOff": 9760,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 5,
+          "minOn": 9420,
+          "minOff": 9420,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 6,
+          "minOn": 9890,
+          "minOff": 9890,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 7,
+          "minOn": 9330,
+          "minOff": 9330,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 8,
+          "minOn": 9680,
+          "minOff": 9680,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 9,
+          "minOn": 9730,
+          "minOff": 9730,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 10,
+          "minOn": 9570,
+          "minOff": 9570,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 11,
+          "minOn": 9660,
+          "minOff": 9660,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 12,
+          "minOn": 9760,
+          "minOff": 9760,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 13,
+          "minOn": 9680,
+          "minOff": 9680,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 14,
+          "minOn": 9640,
+          "minOff": 9640,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 15,
+          "minOn": 9910,
+          "minOff": 9910,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 16,
+          "minOn": 9830,
+          "minOff": 9830,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 17,
+          "minOn": 9350,
+          "minOff": 9350,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 18,
+          "minOn": 9810,
+          "minOff": 9810,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 19,
+          "minOn": 9090,
+          "minOff": 9090,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 20,
+          "minOn": 9790,
+          "minOff": 9790,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 21,
+          "minOn": 9650,
+          "minOff": 9650,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 22,
+          "minOn": 9390,
+          "minOff": 9390,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 23,
+          "minOn": 9650,
+          "minOff": 9650,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 24,
+          "minOn": 9410,
+          "minOff": 9410,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 25,
+          "minOn": 9840,
+          "minOff": 9840,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 26,
+          "minOn": 9820,
+          "minOff": 9820,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 27,
+          "minOn": 9930,
+          "minOff": 9930,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 28,
+          "minOn": 9930,
+          "minOff": 9930,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 29,
+          "minOn": 9980,
+          "minOff": 9980,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 30,
+          "minOn": 9240,
+          "minOff": 9240,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 31,
+          "minOn": 9790,
+          "minOff": 9790,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 32,
+          "minOn": 9950,
+          "minOff": 9950,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 33,
+          "minOn": 9730,
+          "minOff": 9730,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 34,
+          "minOn": 9800,
+          "minOff": 9800,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 35,
+          "minOn": 9880,
+          "minOff": 9880,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 36,
+          "minOn": 10000,
+          "minOff": 10000,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 37,
+          "minOn": 9970,
+          "minOff": 9970,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 38,
+          "minOn": 9180,
+          "minOff": 9180,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 39,
+          "minOn": 9930,
+          "minOff": 9930,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 40,
+          "minOn": 9850,
+          "minOff": 9850,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 41,
+          "minOn": 9960,
+          "minOff": 9960,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 42,
+          "minOn": 9620,
+          "minOff": 9620,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 43,
+          "minOn": 9310,
+          "minOff": 9310,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 44,
+          "minOn": 10000,
+          "minOff": 10000,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 45,
+          "minOn": 9980,
+          "minOff": 9980,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 46,
+          "minOn": 9940,
+          "minOff": 9940,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 47,
+          "minOn": 9230,
+          "minOff": 9230,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 48,
+          "minOn": 9640,
+          "minOff": 9640,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 49,
+          "minOn": 9420,
+          "minOff": 9420,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 50,
+          "minOn": 9900,
+          "minOff": 9900,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 51,
+          "minOn": 9870,
+          "minOff": 9870,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 52,
+          "minOn": 9980,
+          "minOff": 9980,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 53,
+          "minOn": 9650,
+          "minOff": 9650,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 54,
+          "minOn": 9440,
+          "minOff": 9440,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 55,
+          "minOn": 9760,
+          "minOff": 9760,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 56,
+          "minOn": 9940,
+          "minOff": 9940,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 57,
+          "minOn": 9820,
+          "minOff": 9820,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 58,
+          "minOn": 9670,
+          "minOff": 9670,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 59,
+          "minOn": 9230,
+          "minOff": 9230,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 60,
+          "minOn": 9390,
+          "minOff": 9390,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 61,
+          "minOn": 9560,
+          "minOff": 9560,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 62,
+          "minOn": 9490,
+          "minOff": 9490,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 63,
+          "minOn": 9940,
+          "minOff": 9940,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 64,
+          "minOn": 10000,
+          "minOff": 10000,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 65,
+          "minOn": 9860,
+          "minOff": 9860,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 66,
+          "minOn": 9790,
+          "minOff": 9790,
+          "delta": 0,
+          "viTriggers": 1
+        },
+        {
+          "seed": 67,
+          "minOn": 9790,
+          "minOff": 9790,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 68,
+          "minOn": 9840,
+          "minOff": 9840,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 69,
+          "minOn": 9820,
+          "minOff": 9820,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 70,
+          "minOn": 9590,
+          "minOff": 9590,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 71,
+          "minOn": 9690,
+          "minOff": 9690,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 72,
+          "minOn": 9830,
+          "minOff": 9830,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 73,
+          "minOn": 9750,
+          "minOff": 9750,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 74,
+          "minOn": 9940,
+          "minOff": 9940,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 75,
+          "minOn": 9510,
+          "minOff": 9510,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 76,
+          "minOn": 9810,
+          "minOff": 9810,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 77,
+          "minOn": 9870,
+          "minOff": 9870,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 78,
+          "minOn": 9630,
+          "minOff": 9630,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 79,
+          "minOn": 9360,
+          "minOff": 9360,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 80,
+          "minOn": 9360,
+          "minOff": 9360,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 81,
+          "minOn": 9570,
+          "minOff": 9570,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 82,
+          "minOn": 9430,
+          "minOff": 9430,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 83,
+          "minOn": 9720,
+          "minOff": 9720,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 84,
+          "minOn": 9920,
+          "minOff": 9920,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 85,
+          "minOn": 9810,
+          "minOff": 9810,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 86,
+          "minOn": 9040,
+          "minOff": 9040,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 87,
+          "minOn": 9620,
+          "minOff": 9620,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 88,
+          "minOn": 9890,
+          "minOff": 9890,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 89,
+          "minOn": 9440,
+          "minOff": 9440,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 90,
+          "minOn": 9770,
+          "minOff": 9770,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 91,
+          "minOn": 9490,
+          "minOff": 9490,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 92,
+          "minOn": 9530,
+          "minOff": 9530,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 93,
+          "minOn": 9360,
+          "minOff": 9360,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 94,
+          "minOn": 9610,
+          "minOff": 9610,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 95,
+          "minOn": 9450,
+          "minOff": 9450,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 96,
+          "minOn": 9750,
+          "minOff": 9750,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 97,
+          "minOn": 9860,
+          "minOff": 9860,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 98,
+          "minOn": 9530,
+          "minOff": 9530,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 99,
+          "minOn": 9780,
+          "minOff": 9780,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 100,
+          "minOn": 9660,
+          "minOff": 9660,
+          "delta": 0,
+          "viTriggers": 0
+        }
+      ]
+    },
+    {
+      "scenario": "FatFinger",
+      "deltaQuantiles": {
+        "min": 1500,
+        "p25": 2270,
+        "median": 2465,
+        "p75": 2650,
+        "max": 2990
+      },
+      "counts": {
+        "viWorse": 0,
+        "tie": 0,
+        "viBetter": 100
+      },
+      "runsEndingInVi": {
+        "viOn": 6,
+        "viOff": 0
+      },
+      "seeds": [
+        {
+          "seed": 1,
+          "minOn": 8800,
+          "minOff": 7020,
+          "delta": 1780,
+          "viTriggers": 1
+        },
+        {
+          "seed": 2,
+          "minOn": 9390,
+          "minOff": 7020,
+          "delta": 2370,
+          "viTriggers": 2
+        },
+        {
+          "seed": 3,
+          "minOn": 9790,
+          "minOff": 7020,
+          "delta": 2770,
+          "viTriggers": 1
+        },
+        {
+          "seed": 4,
+          "minOn": 9710,
+          "minOff": 7020,
+          "delta": 2690,
+          "viTriggers": 1
+        },
+        {
+          "seed": 5,
+          "minOn": 9250,
+          "minOff": 7020,
+          "delta": 2230,
+          "viTriggers": 1
+        },
+        {
+          "seed": 6,
+          "minOn": 9650,
+          "minOff": 7020,
+          "delta": 2630,
+          "viTriggers": 1
+        },
+        {
+          "seed": 7,
+          "minOn": 8950,
+          "minOff": 7020,
+          "delta": 1930,
+          "viTriggers": 1
+        },
+        {
+          "seed": 8,
+          "minOn": 9390,
+          "minOff": 7020,
+          "delta": 2370,
+          "viTriggers": 1
+        },
+        {
+          "seed": 9,
+          "minOn": 9730,
+          "minOff": 7020,
+          "delta": 2710,
+          "viTriggers": 1
+        },
+        {
+          "seed": 10,
+          "minOn": 9410,
+          "minOff": 7020,
+          "delta": 2390,
+          "viTriggers": 1
+        },
+        {
+          "seed": 11,
+          "minOn": 9160,
+          "minOff": 7020,
+          "delta": 2140,
+          "viTriggers": 1
+        },
+        {
+          "seed": 12,
+          "minOn": 9370,
+          "minOff": 7020,
+          "delta": 2350,
+          "viTriggers": 1
+        },
+        {
+          "seed": 13,
+          "minOn": 9460,
+          "minOff": 7020,
+          "delta": 2440,
+          "viTriggers": 1
+        },
+        {
+          "seed": 14,
+          "minOn": 9310,
+          "minOff": 7020,
+          "delta": 2290,
+          "viTriggers": 1
+        },
+        {
+          "seed": 15,
+          "minOn": 9530,
+          "minOff": 7000,
+          "delta": 2530,
+          "viTriggers": 1
+        },
+        {
+          "seed": 16,
+          "minOn": 9490,
+          "minOff": 7020,
+          "delta": 2470,
+          "viTriggers": 1
+        },
+        {
+          "seed": 17,
+          "minOn": 9050,
+          "minOff": 7020,
+          "delta": 2030,
+          "viTriggers": 1
+        },
+        {
+          "seed": 18,
+          "minOn": 9450,
+          "minOff": 7010,
+          "delta": 2440,
+          "viTriggers": 1
+        },
+        {
+          "seed": 19,
+          "minOn": 8810,
+          "minOff": 7020,
+          "delta": 1790,
+          "viTriggers": 1
+        },
+        {
+          "seed": 20,
+          "minOn": 9570,
+          "minOff": 7020,
+          "delta": 2550,
+          "viTriggers": 1
+        },
+        {
+          "seed": 21,
+          "minOn": 9450,
+          "minOff": 7020,
+          "delta": 2430,
+          "viTriggers": 1
+        },
+        {
+          "seed": 22,
+          "minOn": 9370,
+          "minOff": 7020,
+          "delta": 2350,
+          "viTriggers": 1
+        },
+        {
+          "seed": 23,
+          "minOn": 9610,
+          "minOff": 7020,
+          "delta": 2590,
+          "viTriggers": 1
+        },
+        {
+          "seed": 24,
+          "minOn": 9190,
+          "minOff": 7020,
+          "delta": 2170,
+          "viTriggers": 1
+        },
+        {
+          "seed": 25,
+          "minOn": 9860,
+          "minOff": 7020,
+          "delta": 2840,
+          "viTriggers": 1
+        },
+        {
+          "seed": 26,
+          "minOn": 9760,
+          "minOff": 7000,
+          "delta": 2760,
+          "viTriggers": 1
+        },
+        {
+          "seed": 27,
+          "minOn": 9760,
+          "minOff": 7020,
+          "delta": 2740,
+          "viTriggers": 1
+        },
+        {
+          "seed": 28,
+          "minOn": 9930,
+          "minOff": 7020,
+          "delta": 2910,
+          "viTriggers": 1
+        },
+        {
+          "seed": 29,
+          "minOn": 9780,
+          "minOff": 7020,
+          "delta": 2760,
+          "viTriggers": 1
+        },
+        {
+          "seed": 30,
+          "minOn": 9190,
+          "minOff": 7020,
+          "delta": 2170,
+          "viTriggers": 1
+        },
+        {
+          "seed": 31,
+          "minOn": 9430,
+          "minOff": 7020,
+          "delta": 2410,
+          "viTriggers": 1
+        },
+        {
+          "seed": 32,
+          "minOn": 9950,
+          "minOff": 7020,
+          "delta": 2930,
+          "viTriggers": 1
+        },
+        {
+          "seed": 33,
+          "minOn": 9020,
+          "minOff": 7020,
+          "delta": 2000,
+          "viTriggers": 1
+        },
+        {
+          "seed": 34,
+          "minOn": 9760,
+          "minOff": 7020,
+          "delta": 2740,
+          "viTriggers": 1
+        },
+        {
+          "seed": 35,
+          "minOn": 9760,
+          "minOff": 7020,
+          "delta": 2740,
+          "viTriggers": 1
+        },
+        {
+          "seed": 36,
+          "minOn": 10000,
+          "minOff": 7020,
+          "delta": 2980,
+          "viTriggers": 1
+        },
+        {
+          "seed": 37,
+          "minOn": 9960,
+          "minOff": 7020,
+          "delta": 2940,
+          "viTriggers": 1
+        },
+        {
+          "seed": 38,
+          "minOn": 8870,
+          "minOff": 7020,
+          "delta": 1850,
+          "viTriggers": 1
+        },
+        {
+          "seed": 39,
+          "minOn": 9630,
+          "minOff": 7000,
+          "delta": 2630,
+          "viTriggers": 1
+        },
+        {
+          "seed": 40,
+          "minOn": 9560,
+          "minOff": 7010,
+          "delta": 2550,
+          "viTriggers": 1
+        },
+        {
+          "seed": 41,
+          "minOn": 9780,
+          "minOff": 7020,
+          "delta": 2760,
+          "viTriggers": 1
+        },
+        {
+          "seed": 42,
+          "minOn": 9540,
+          "minOff": 7020,
+          "delta": 2520,
+          "viTriggers": 1
+        },
+        {
+          "seed": 43,
+          "minOn": 8700,
+          "minOff": 7020,
+          "delta": 1680,
+          "viTriggers": 2
+        },
+        {
+          "seed": 44,
+          "minOn": 9800,
+          "minOff": 7020,
+          "delta": 2780,
+          "viTriggers": 1
+        },
+        {
+          "seed": 45,
+          "minOn": 9800,
+          "minOff": 7000,
+          "delta": 2800,
+          "viTriggers": 1
+        },
+        {
+          "seed": 46,
+          "minOn": 9570,
+          "minOff": 7020,
+          "delta": 2550,
+          "viTriggers": 1
+        },
+        {
+          "seed": 47,
+          "minOn": 9000,
+          "minOff": 7020,
+          "delta": 1980,
+          "viTriggers": 1
+        },
+        {
+          "seed": 48,
+          "minOn": 9410,
+          "minOff": 7020,
+          "delta": 2390,
+          "viTriggers": 1
+        },
+        {
+          "seed": 49,
+          "minOn": 9360,
+          "minOff": 7020,
+          "delta": 2340,
+          "viTriggers": 1
+        },
+        {
+          "seed": 50,
+          "minOn": 9840,
+          "minOff": 7020,
+          "delta": 2820,
+          "viTriggers": 1
+        },
+        {
+          "seed": 51,
+          "minOn": 9510,
+          "minOff": 7010,
+          "delta": 2500,
+          "viTriggers": 2
+        },
+        {
+          "seed": 52,
+          "minOn": 9690,
+          "minOff": 7020,
+          "delta": 2670,
+          "viTriggers": 1
+        },
+        {
+          "seed": 53,
+          "minOn": 9480,
+          "minOff": 7020,
+          "delta": 2460,
+          "viTriggers": 1
+        },
+        {
+          "seed": 54,
+          "minOn": 8990,
+          "minOff": 7000,
+          "delta": 1990,
+          "viTriggers": 1
+        },
+        {
+          "seed": 55,
+          "minOn": 9650,
+          "minOff": 7020,
+          "delta": 2630,
+          "viTriggers": 1
+        },
+        {
+          "seed": 56,
+          "minOn": 9760,
+          "minOff": 7020,
+          "delta": 2740,
+          "viTriggers": 1
+        },
+        {
+          "seed": 57,
+          "minOn": 9550,
+          "minOff": 7020,
+          "delta": 2530,
+          "viTriggers": 1
+        },
+        {
+          "seed": 58,
+          "minOn": 9460,
+          "minOff": 7020,
+          "delta": 2440,
+          "viTriggers": 1
+        },
+        {
+          "seed": 59,
+          "minOn": 8800,
+          "minOff": 7020,
+          "delta": 1780,
+          "viTriggers": 1
+        },
+        {
+          "seed": 60,
+          "minOn": 9080,
+          "minOff": 7020,
+          "delta": 2060,
+          "viTriggers": 1
+        },
+        {
+          "seed": 61,
+          "minOn": 9360,
+          "minOff": 7020,
+          "delta": 2340,
+          "viTriggers": 1
+        },
+        {
+          "seed": 62,
+          "minOn": 9450,
+          "minOff": 7020,
+          "delta": 2430,
+          "viTriggers": 1
+        },
+        {
+          "seed": 63,
+          "minOn": 9750,
+          "minOff": 7000,
+          "delta": 2750,
+          "viTriggers": 1
+        },
+        {
+          "seed": 64,
+          "minOn": 10000,
+          "minOff": 7010,
+          "delta": 2990,
+          "viTriggers": 1
+        },
+        {
+          "seed": 65,
+          "minOn": 9750,
+          "minOff": 7020,
+          "delta": 2730,
+          "viTriggers": 1
+        },
+        {
+          "seed": 66,
+          "minOn": 9630,
+          "minOff": 7020,
+          "delta": 2610,
+          "viTriggers": 1
+        },
+        {
+          "seed": 67,
+          "minOn": 9620,
+          "minOff": 7020,
+          "delta": 2600,
+          "viTriggers": 1
+        },
+        {
+          "seed": 68,
+          "minOn": 9800,
+          "minOff": 7020,
+          "delta": 2780,
+          "viTriggers": 1
+        },
+        {
+          "seed": 69,
+          "minOn": 9670,
+          "minOff": 7020,
+          "delta": 2650,
+          "viTriggers": 1
+        },
+        {
+          "seed": 70,
+          "minOn": 9190,
+          "minOff": 7020,
+          "delta": 2170,
+          "viTriggers": 1
+        },
+        {
+          "seed": 71,
+          "minOn": 9460,
+          "minOff": 7020,
+          "delta": 2440,
+          "viTriggers": 1
+        },
+        {
+          "seed": 72,
+          "minOn": 9750,
+          "minOff": 7020,
+          "delta": 2730,
+          "viTriggers": 1
+        },
+        {
+          "seed": 73,
+          "minOn": 9460,
+          "minOff": 7000,
+          "delta": 2460,
+          "viTriggers": 1
+        },
+        {
+          "seed": 74,
+          "minOn": 9920,
+          "minOff": 7020,
+          "delta": 2900,
+          "viTriggers": 1
+        },
+        {
+          "seed": 75,
+          "minOn": 8810,
+          "minOff": 7020,
+          "delta": 1790,
+          "viTriggers": 2
+        },
+        {
+          "seed": 76,
+          "minOn": 9670,
+          "minOff": 7020,
+          "delta": 2650,
+          "viTriggers": 1
+        },
+        {
+          "seed": 77,
+          "minOn": 9630,
+          "minOff": 7020,
+          "delta": 2610,
+          "viTriggers": 1
+        },
+        {
+          "seed": 78,
+          "minOn": 9470,
+          "minOff": 7020,
+          "delta": 2450,
+          "viTriggers": 1
+        },
+        {
+          "seed": 79,
+          "minOn": 9080,
+          "minOff": 7020,
+          "delta": 2060,
+          "viTriggers": 1
+        },
+        {
+          "seed": 80,
+          "minOn": 8520,
+          "minOff": 7020,
+          "delta": 1500,
+          "viTriggers": 2
+        },
+        {
+          "seed": 81,
+          "minOn": 9290,
+          "minOff": 7020,
+          "delta": 2270,
+          "viTriggers": 1
+        },
+        {
+          "seed": 82,
+          "minOn": 9290,
+          "minOff": 7020,
+          "delta": 2270,
+          "viTriggers": 1
+        },
+        {
+          "seed": 83,
+          "minOn": 9510,
+          "minOff": 7020,
+          "delta": 2490,
+          "viTriggers": 1
+        },
+        {
+          "seed": 84,
+          "minOn": 9640,
+          "minOff": 7020,
+          "delta": 2620,
+          "viTriggers": 1
+        },
+        {
+          "seed": 85,
+          "minOn": 9540,
+          "minOff": 7020,
+          "delta": 2520,
+          "viTriggers": 1
+        },
+        {
+          "seed": 86,
+          "minOn": 8820,
+          "minOff": 7000,
+          "delta": 1820,
+          "viTriggers": 1
+        },
+        {
+          "seed": 87,
+          "minOn": 9320,
+          "minOff": 7020,
+          "delta": 2300,
+          "viTriggers": 1
+        },
+        {
+          "seed": 88,
+          "minOn": 9620,
+          "minOff": 7020,
+          "delta": 2600,
+          "viTriggers": 1
+        },
+        {
+          "seed": 89,
+          "minOn": 9000,
+          "minOff": 7020,
+          "delta": 1980,
+          "viTriggers": 2
+        },
+        {
+          "seed": 90,
+          "minOn": 9570,
+          "minOff": 7020,
+          "delta": 2550,
+          "viTriggers": 1
+        },
+        {
+          "seed": 91,
+          "minOn": 9280,
+          "minOff": 7020,
+          "delta": 2260,
+          "viTriggers": 1
+        },
+        {
+          "seed": 92,
+          "minOn": 9240,
+          "minOff": 7010,
+          "delta": 2230,
+          "viTriggers": 1
+        },
+        {
+          "seed": 93,
+          "minOn": 9280,
+          "minOff": 7020,
+          "delta": 2260,
+          "viTriggers": 1
+        },
+        {
+          "seed": 94,
+          "minOn": 9330,
+          "minOff": 7020,
+          "delta": 2310,
+          "viTriggers": 1
+        },
+        {
+          "seed": 95,
+          "minOn": 9360,
+          "minOff": 7000,
+          "delta": 2360,
+          "viTriggers": 1
+        },
+        {
+          "seed": 96,
+          "minOn": 9540,
+          "minOff": 7020,
+          "delta": 2520,
+          "viTriggers": 1
+        },
+        {
+          "seed": 97,
+          "minOn": 9540,
+          "minOff": 7000,
+          "delta": 2540,
+          "viTriggers": 1
+        },
+        {
+          "seed": 98,
+          "minOn": 9390,
+          "minOff": 7020,
+          "delta": 2370,
+          "viTriggers": 1
+        },
+        {
+          "seed": 99,
+          "minOn": 9650,
+          "minOff": 7020,
+          "delta": 2630,
+          "viTriggers": 1
+        },
+        {
+          "seed": 100,
+          "minOn": 9440,
+          "minOff": 7020,
+          "delta": 2420,
+          "viTriggers": 1
+        }
+      ]
+    },
+    {
+      "scenario": "PanicSell",
+      "deltaQuantiles": {
+        "min": 0,
+        "p25": 0,
+        "median": 0,
+        "p75": 130,
+        "max": 1300
+      },
+      "counts": {
+        "viWorse": 0,
+        "tie": 71,
+        "viBetter": 29
+      },
+      "runsEndingInVi": {
+        "viOn": 16,
+        "viOff": 0
+      },
+      "seeds": [
+        {
+          "seed": 1,
+          "minOn": 8810,
+          "minOff": 8810,
+          "delta": 0,
+          "viTriggers": 1
+        },
+        {
+          "seed": 2,
+          "minOn": 9600,
+          "minOff": 9600,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 3,
+          "minOn": 9340,
+          "minOff": 9340,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 4,
+          "minOn": 9500,
+          "minOff": 9500,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 5,
+          "minOn": 9120,
+          "minOff": 8700,
+          "delta": 420,
+          "viTriggers": 1
+        },
+        {
+          "seed": 6,
+          "minOn": 9360,
+          "minOff": 9360,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 7,
+          "minOn": 9040,
+          "minOff": 9010,
+          "delta": 30,
+          "viTriggers": 1
+        },
+        {
+          "seed": 8,
+          "minOn": 9570,
+          "minOff": 9570,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 9,
+          "minOn": 9260,
+          "minOff": 9260,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 10,
+          "minOn": 9440,
+          "minOff": 9140,
+          "delta": 300,
+          "viTriggers": 1
+        },
+        {
+          "seed": 11,
+          "minOn": 9170,
+          "minOff": 9170,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 12,
+          "minOn": 9380,
+          "minOff": 9090,
+          "delta": 290,
+          "viTriggers": 1
+        },
+        {
+          "seed": 13,
+          "minOn": 9590,
+          "minOff": 9590,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 14,
+          "minOn": 9120,
+          "minOff": 9120,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 15,
+          "minOn": 9430,
+          "minOff": 9430,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 16,
+          "minOn": 9410,
+          "minOff": 9410,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 17,
+          "minOn": 9120,
+          "minOff": 9120,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 18,
+          "minOn": 9310,
+          "minOff": 9310,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 19,
+          "minOn": 9090,
+          "minOff": 8550,
+          "delta": 540,
+          "viTriggers": 1
+        },
+        {
+          "seed": 20,
+          "minOn": 9350,
+          "minOff": 9350,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 21,
+          "minOn": 9370,
+          "minOff": 9370,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 22,
+          "minOn": 9240,
+          "minOff": 9240,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 23,
+          "minOn": 9650,
+          "minOff": 9650,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 24,
+          "minOn": 9130,
+          "minOff": 9130,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 25,
+          "minOn": 9460,
+          "minOff": 9120,
+          "delta": 340,
+          "viTriggers": 1
+        },
+        {
+          "seed": 26,
+          "minOn": 9420,
+          "minOff": 9420,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 27,
+          "minOn": 9420,
+          "minOff": 9420,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 28,
+          "minOn": 9700,
+          "minOff": 9390,
+          "delta": 310,
+          "viTriggers": 1
+        },
+        {
+          "seed": 29,
+          "minOn": 9500,
+          "minOff": 9500,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 30,
+          "minOn": 9140,
+          "minOff": 9140,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 31,
+          "minOn": 9340,
+          "minOff": 9340,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 32,
+          "minOn": 9540,
+          "minOff": 9540,
+          "delta": 0,
+          "viTriggers": 1
+        },
+        {
+          "seed": 33,
+          "minOn": 9270,
+          "minOff": 9270,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 34,
+          "minOn": 9340,
+          "minOff": 9340,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 35,
+          "minOn": 9440,
+          "minOff": 9440,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 36,
+          "minOn": 9930,
+          "minOff": 9620,
+          "delta": 310,
+          "viTriggers": 1
+        },
+        {
+          "seed": 37,
+          "minOn": 9960,
+          "minOff": 9960,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 38,
+          "minOn": 9010,
+          "minOff": 8640,
+          "delta": 370,
+          "viTriggers": 2
+        },
+        {
+          "seed": 39,
+          "minOn": 9530,
+          "minOff": 9220,
+          "delta": 310,
+          "viTriggers": 1
+        },
+        {
+          "seed": 40,
+          "minOn": 9420,
+          "minOff": 9420,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 41,
+          "minOn": 9530,
+          "minOff": 9530,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 42,
+          "minOn": 9460,
+          "minOff": 9460,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 43,
+          "minOn": 9020,
+          "minOff": 9020,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 44,
+          "minOn": 9560,
+          "minOff": 9560,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 45,
+          "minOn": 9680,
+          "minOff": 9680,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 46,
+          "minOn": 9380,
+          "minOff": 9380,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 47,
+          "minOn": 9010,
+          "minOff": 8720,
+          "delta": 290,
+          "viTriggers": 1
+        },
+        {
+          "seed": 48,
+          "minOn": 9340,
+          "minOff": 9340,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 49,
+          "minOn": 9260,
+          "minOff": 8490,
+          "delta": 770,
+          "viTriggers": 1
+        },
+        {
+          "seed": 50,
+          "minOn": 9680,
+          "minOff": 9680,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 51,
+          "minOn": 9520,
+          "minOff": 9420,
+          "delta": 100,
+          "viTriggers": 1
+        },
+        {
+          "seed": 52,
+          "minOn": 9750,
+          "minOff": 9750,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 53,
+          "minOn": 9330,
+          "minOff": 9330,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 54,
+          "minOn": 9030,
+          "minOff": 9030,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 55,
+          "minOn": 9480,
+          "minOff": 9480,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 56,
+          "minOn": 9500,
+          "minOff": 9500,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 57,
+          "minOn": 9450,
+          "minOff": 9160,
+          "delta": 290,
+          "viTriggers": 2
+        },
+        {
+          "seed": 58,
+          "minOn": 9330,
+          "minOff": 8260,
+          "delta": 1070,
+          "viTriggers": 1
+        },
+        {
+          "seed": 59,
+          "minOn": 9380,
+          "minOff": 8460,
+          "delta": 920,
+          "viTriggers": 1
+        },
+        {
+          "seed": 60,
+          "minOn": 9070,
+          "minOff": 8620,
+          "delta": 450,
+          "viTriggers": 1
+        },
+        {
+          "seed": 61,
+          "minOn": 9200,
+          "minOff": 9200,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 62,
+          "minOn": 9290,
+          "minOff": 7990,
+          "delta": 1300,
+          "viTriggers": 1
+        },
+        {
+          "seed": 63,
+          "minOn": 9390,
+          "minOff": 9260,
+          "delta": 130,
+          "viTriggers": 1
+        },
+        {
+          "seed": 64,
+          "minOn": 9500,
+          "minOff": 9500,
+          "delta": 0,
+          "viTriggers": 1
+        },
+        {
+          "seed": 65,
+          "minOn": 9630,
+          "minOff": 9630,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 66,
+          "minOn": 9450,
+          "minOff": 9450,
+          "delta": 0,
+          "viTriggers": 1
+        },
+        {
+          "seed": 67,
+          "minOn": 9490,
+          "minOff": 9150,
+          "delta": 340,
+          "viTriggers": 2
+        },
+        {
+          "seed": 68,
+          "minOn": 9540,
+          "minOff": 9540,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 69,
+          "minOn": 9420,
+          "minOff": 9420,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 70,
+          "minOn": 9120,
+          "minOff": 8860,
+          "delta": 260,
+          "viTriggers": 1
+        },
+        {
+          "seed": 71,
+          "minOn": 9390,
+          "minOff": 9390,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 72,
+          "minOn": 9640,
+          "minOff": 9640,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 73,
+          "minOn": 9370,
+          "minOff": 9240,
+          "delta": 130,
+          "viTriggers": 1
+        },
+        {
+          "seed": 74,
+          "minOn": 9440,
+          "minOff": 9440,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 75,
+          "minOn": 9200,
+          "minOff": 9130,
+          "delta": 70,
+          "viTriggers": 1
+        },
+        {
+          "seed": 76,
+          "minOn": 9660,
+          "minOff": 9660,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 77,
+          "minOn": 9610,
+          "minOff": 9610,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 78,
+          "minOn": 9420,
+          "minOff": 9420,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 79,
+          "minOn": 9110,
+          "minOff": 9110,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 80,
+          "minOn": 9050,
+          "minOff": 8700,
+          "delta": 350,
+          "viTriggers": 1
+        },
+        {
+          "seed": 81,
+          "minOn": 9350,
+          "minOff": 9350,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 82,
+          "minOn": 9290,
+          "minOff": 9290,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 83,
+          "minOn": 9300,
+          "minOff": 8600,
+          "delta": 700,
+          "viTriggers": 1
+        },
+        {
+          "seed": 84,
+          "minOn": 9530,
+          "minOff": 9530,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 85,
+          "minOn": 9200,
+          "minOff": 9200,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 86,
+          "minOn": 9020,
+          "minOff": 8540,
+          "delta": 480,
+          "viTriggers": 2
+        },
+        {
+          "seed": 87,
+          "minOn": 9300,
+          "minOff": 9300,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 88,
+          "minOn": 9510,
+          "minOff": 9510,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 89,
+          "minOn": 9300,
+          "minOff": 9300,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 90,
+          "minOn": 9530,
+          "minOff": 9530,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 91,
+          "minOn": 9050,
+          "minOff": 9050,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 92,
+          "minOn": 9090,
+          "minOff": 8740,
+          "delta": 350,
+          "viTriggers": 1
+        },
+        {
+          "seed": 93,
+          "minOn": 9060,
+          "minOff": 9060,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 94,
+          "minOn": 9420,
+          "minOff": 9120,
+          "delta": 300,
+          "viTriggers": 1
+        },
+        {
+          "seed": 95,
+          "minOn": 9370,
+          "minOff": 9370,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 96,
+          "minOn": 9350,
+          "minOff": 9040,
+          "delta": 310,
+          "viTriggers": 1
+        },
+        {
+          "seed": 97,
+          "minOn": 9370,
+          "minOff": 9370,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 98,
+          "minOn": 9380,
+          "minOff": 9380,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 99,
+          "minOn": 9490,
+          "minOff": 9490,
+          "delta": 0,
+          "viTriggers": 0
+        },
+        {
+          "seed": 100,
+          "minOn": 9320,
+          "minOff": 9320,
+          "delta": 0,
+          "viTriggers": 0
+        }
+      ]
+    }
+  ],
+  "caveat": "임의 지정한 봇·호가 깊이·충격 크기·관측 구간에 한정된 결과다."
+}
