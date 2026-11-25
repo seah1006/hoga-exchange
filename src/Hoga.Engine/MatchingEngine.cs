@@ -17,10 +17,12 @@ public sealed partial class MatchingEngine
     {
         (UpperLimit, LowerLimit, _) = PriceLimits.Compute(basePrice, tickSizeRule);
         BasePrice = basePrice;
+        DynamicReferencePrice = basePrice;
         _tickSizeRule = tickSizeRule;
         _options = options ?? new();
     }
 
+    public long DynamicReferencePrice { get; private set; }
     public TradingPhase Phase { get; private set; }
     public long BasePrice { get; }
     public long UpperLimit { get; }
@@ -84,6 +86,7 @@ public sealed partial class MatchingEngine
             events.Add(order.Side == Side.Buy
                 ? new Trade(order.OrderId, resting.Id, bestPrice, quantity, order.Sequence)
                 : new Trade(resting.Id, order.OrderId, bestPrice, quantity, order.Sequence));
+            DynamicReferencePrice = bestPrice;
             remaining -= quantity;
             resting.Remaining -= quantity; // R-MATCH-04: update in place without changing priority.
             if (resting.Remaining == 0)
