@@ -98,13 +98,13 @@
 |---|---|---|
 | R-TICK-01 | `TickSizeTable.GetTickSize` | `PriceRuleTests.Tick_boundaries` |
 | R-TICK-02 | `TickSizeTable.IsOnTick`, `MatchingEngine.Place` | `PriceRuleTests.Tick_boundaries`, `MatchingTests.Rejects_invalid_placement`, `InvariantTests.I2_trades_use_valid_prices` |
-| R-LIMIT-01 | `PriceLimits.Compute` | `PriceRuleTests.Specified_limit_examples`, `PriceRuleTests.Max_base_price_computes_without_overflow` |
-| R-LIMIT-02 | `PriceLimits.Compute` | `PriceRuleTests.Specified_limit_examples` |
+| R-LIMIT-01 | `PriceLimits.Compute` | `PriceRuleTests.Specified_limit_examples`, `PriceRuleTests.Limits_use_each_results_tick_near_price_boundaries`, `PriceRuleTests.Max_base_price_computes_without_overflow` |
+| R-LIMIT-02 | `PriceLimits.Compute` | `PriceRuleTests.Specified_limit_examples`, `PriceRuleTests.Limits_use_each_results_tick_near_price_boundaries` |
 | R-LIMIT-03 | `PriceLimits.Compute` | `PriceRuleTests.Specified_limit_examples` |
 | R-LIMIT-04 | `MatchingEngine.Place` | `MatchingTests.Rejects_invalid_placement`, `MatchingTests.Accepts_orders_at_both_limits`, `InvariantTests.I2_trades_use_valid_prices` |
 | R-LIMIT-05 | `MatchingEngine.Place` | `MatchingTests.Rejects_price_below_one_even_at_zero_lower_limit`, `BookTests.All_reject_reasons_only_advance_the_sequence` |
-| R-MATCH-01 | `MatchingEngine.Place` | `MatchingTests.Better_price_trades_first_at_resting_price` |
-| R-MATCH-02 | `MatchingEngine.Place` | `MatchingTests.Partial_fill_keeps_priority_and_large_order_sweeps_multiple_levels`, `InvariantTests.I4_trades_take_the_earliest_resting_order_at_each_price` |
+| R-MATCH-01 | `MatchingEngine.Place` | `MatchingTests.Better_price_trades_first_at_resting_price`, `InvariantTests.I4_trades_take_best_price_then_earliest_resting_order` |
+| R-MATCH-02 | `MatchingEngine.Place` | `MatchingTests.Partial_fill_keeps_priority_and_large_order_sweeps_multiple_levels`, `InvariantTests.I4_trades_take_best_price_then_earliest_resting_order` |
 | R-MATCH-03 | `MatchingEngine.Place` | `MatchingTests.Better_price_trades_first_at_resting_price` |
 | R-MATCH-04 | `MatchingEngine.Place` | `MatchingTests.Partial_fill_keeps_priority_and_large_order_sweeps_multiple_levels`, `BookTests.Book_and_queue_reflect_partial_fill_and_cancellation` |
 | R-AUCT-01~05 | (TASK-002) | |

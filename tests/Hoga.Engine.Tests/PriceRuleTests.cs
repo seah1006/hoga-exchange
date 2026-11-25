@@ -37,6 +37,25 @@ public class PriceRuleTests
     public void Specified_limit_examples(long price, long upper, long lower, long band) =>
         Assert.Equal((upper, lower, band), PriceLimits.Compute(price, Rule));
 
+    [Theory]
+    [Trait("Rule", "R-LIMIT-01")]
+    [Trait("Rule", "R-LIMIT-02")]
+    // RULES §2: floor base * 3 / 10 to the base tick; then floor base ± band to each result's tick.
+    // 1,990: 597 → 597 (tick 1); 2,587 → 2,585 (5); 1,393 → 1,393 (1).
+    [InlineData(1_990, 2_585, 1_393, 597)]
+    // 4,990: 1,497 → 1,495 (5); 6,485 → 6,480 (10); 3,495 → 3,495 (5).
+    [InlineData(4_990, 6_480, 3_495, 1_495)]
+    // 19,990: 5,997 → 5,990 (10); 25,980 → 25,950 (50); 14,000 → 14,000 (10).
+    [InlineData(19_990, 25_950, 14_000, 5_990)]
+    // 49,950: 14,985 → 14,950 (50); 64,900 → 64,900 (100); 35,000 → 35,000 (50).
+    [InlineData(49_950, 64_900, 35_000, 14_950)]
+    // 199,900: 59,970 → 59,900 (100); 259,800 → 259,500 (500); 140,000 → 140,000 (100).
+    [InlineData(199_900, 259_500, 140_000, 59_900)]
+    // 499,500: 149,850 → 149,500 (500); 649,000 → 649,000 (1,000); 350,000 → 350,000 (500).
+    [InlineData(499_500, 649_000, 350_000, 149_500)]
+    public void Limits_use_each_results_tick_near_price_boundaries(long price, long upper, long lower, long band) =>
+        Assert.Equal((upper, lower, band), PriceLimits.Compute(price, Rule));
+
     [Fact]
     [Trait("Rule", "R-LIMIT-01")]
     public void Max_base_price_computes_without_overflow() =>

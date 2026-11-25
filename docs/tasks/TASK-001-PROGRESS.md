@@ -41,4 +41,6 @@
 - 검증: `dotnet build HogaExchange.slnx -warnaserror` 경고 0 / 오류 0, `dotnet test HogaExchange.slnx` 44건 통과.
 - 2단계 (항목 2~3): 1원 미만 호가를 `InvalidPrice`(R-LIMIT-05), 빈/공백 ID의 접수·취소를 `InvalidOrderId`로 거부한다. 판정 우선순위를 코드 주석에, 새 거부 사유와 가격 규칙을 문서·테스트에 반영했다.
 - 검증: `dotnet build HogaExchange.slnx -warnaserror` 경고 0 / 오류 0, `dotnet test HogaExchange.slnx` 48건 통과.
-- 다음: 항목 4~5. 막힌 것 없음.
+- 3단계 (항목 4~5): I1~I6 각 입력을 기준가 7개에서 검사한다. 경계 부근 6개 기준가의 가격제한폭·상하한가를 손계산해 고정 테스트에 추가했다. I4는 체결 직전 잔량 장부에서 상대편 최우선 가격과 해당 가격의 최초 접수 주문을 검사한다. 양방향 다단계 체결이 빈 생성 입력에서도 실행된다. RULES 8장 추적표를 반영했다.
+- 최종 검증: `dotnet build HogaExchange.slnx -warnaserror` 경고 0 / 오류 0, `dotnet test HogaExchange.slnx` 54건 통과 / 실패 0 / 건너뜀 0. 상세 출력에서 FsCheck I1~I6 각각 200회 통과(속성마다 각 입력을 7개 기준가에서 검사). 엔진 금지 API 0건.
+- 다음: 메인 에이전트 검증. 막힌 것 없음. 리뷰 항목 6~9는 변경하지 않았다.
