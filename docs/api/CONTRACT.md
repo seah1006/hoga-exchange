@@ -1,4 +1,6 @@
-# 서버-화면 계약 (CONTRACT) v0.1
+# 서버-화면 계약 (CONTRACT) v0.2
+
+변경 이력: v0.2 (2026-11-25) 거부 사유 목록, 실패 응답 형식, 없는 주문·실험의 404 추가 (REVIEW-2 P2-6).
 
 서버(`src/Hoga.Server`, TASK-004)와 화면(`web/`, TASK-006)이 공유하는 메시지 형식이다. 화면은 서버가 생기기 전까지 이 계약대로 만든 목(mock) 데이터로 개발한다. 계약을 바꿔야 하면 구현에서 바꾸지 말고 메인 에이전트에게 제안한다.
 
@@ -66,6 +68,25 @@
 | `GET /api/state/hash` | - | `{ "seq": 1024, "stateHash": "ab12...", "restoredFromJournal": true }` |
 
 거부 응답 예: `{ "orderId": null, "accepted": false, "reason": "AboveUpperLimit", "ruleId": "R-LIMIT-04" }`
+
+### 거부 사유 (`reason`)
+| 값 | 뜻 | ruleId |
+|---|---|---|
+| `InvalidQuantity` | 수량 0 이하 | null |
+| `InvalidPrice` | 1원 미만 | R-LIMIT-05 |
+| `InvalidOrderId` | 빈 주문 ID | null |
+| `OffTick` | 호가단위 위반 | R-TICK-02 |
+| `AboveUpperLimit` | 상한가 초과 | R-LIMIT-04 |
+| `BelowLowerLimit` | 하한가 미만 | R-LIMIT-04 |
+| `DuplicateOrderId` | 이미 쓴 주문 ID | null |
+| `UnknownOrder` | 취소 대상 없음(이미 체결·취소 포함) | null |
+
+### 실패 응답
+- 요청 형식 오류: HTTP 400 `{ "error": "BadRequest", "message": "..." }`
+- 없는 주문·실험: HTTP 404 `{ "error": "NotFound", "message": "..." }`
+- 관리자 키 없음: HTTP 401 `{ "error": "Unauthorized", "message": "..." }`
+- 알 수 없는 시나리오: HTTP 400 `{ "error": "UnknownScenario", "message": "..." }`
+- 주문 거부는 에러가 아니라 HTTP 200 + `accepted: false`
 
 ### 설명 객체 (`explanation`)
 ```json
