@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Hoga.Engine/Hoga.Engine.csproj" />
+    <ProjectReference Include="../Hoga.Journal/Hoga.Journal.csproj" />
+  </ItemGroup>
+</Project>
