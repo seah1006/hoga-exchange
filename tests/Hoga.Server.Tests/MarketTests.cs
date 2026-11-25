@@ -354,6 +354,8 @@ public sealed class MarketTests
     {
         using var app = new MarketFactory(bots: true, frozen: true);
         using var client = app.CreateClient();
+        // The request is processed only after ExecuteAsync captures the clock origin.
+        await Get(client, "/api/state/hash");
         app.Clock.AddMilliseconds(1_000);
         await WaitUntil(() => JournalReader.Read(app.JournalPath).Commands.OfType<PlaceLimitOrder>()
             .Any(o => o.AccountId == "MarketMaker"));
