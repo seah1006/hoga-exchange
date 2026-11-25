@@ -29,6 +29,7 @@ R-TICK-03 근거: KRX 투자자 교육자료(2022-02), 교보·한양·한화증
 | R-LIMIT-02 | 상한가 = 기준가격 + 가격제한폭, 하한가 = 기준가격 − 가격제한폭. 각각 **그 결과 가격의 호가단위**로 절사 | 1단계 |
 | R-LIMIT-03 | R-LIMIT-01의 금액이 가장 낮은 호가단위(1원) 미만이면 1원으로 한다 | 1단계 |
 | R-LIMIT-04 | 상한가보다 높거나 하한가보다 낮은 호가는 접수하지 않는다 | 1단계 |
+| R-LIMIT-05 | 호가 가격은 1원 이상(임의 지정 단순화. 기준가 1원이면 산식상 하한가가 0원이 되기 때문) | 1단계 |
 
 검증 예시(테스트로 고정):
 | 기준가격 | 폭(1차 절사) | 상한가 | 하한가 | 근거 |
@@ -108,9 +109,16 @@ VI 테스트 예시(증권사 안내 예시를 바탕으로 호가 배치를 임
 
 | 규칙 ID | 코드 위치 | 테스트 |
 |---|---|---|
-| R-TICK-01 | (TASK-001) | |
-| R-TICK-02 | (TASK-001) | |
-| R-LIMIT-01~04 | (TASK-001) | |
-| R-MATCH-01~04 | (TASK-001) | |
+| R-TICK-01 | `TickSizeTable.GetTickSize` | `PriceRuleTests.Tick_boundaries` |
+| R-TICK-02 | `TickSizeTable.IsOnTick`, `MatchingEngine.Place` | `PriceRuleTests.Tick_boundaries`, `MatchingTests.Rejects_invalid_placement`, `InvariantTests.I2_trades_use_valid_prices` |
+| R-LIMIT-01 | `PriceLimits.Compute` | `PriceRuleTests.Specified_limit_examples`, `PriceRuleTests.Limits_use_each_results_tick_near_price_boundaries`, `PriceRuleTests.Max_base_price_computes_without_overflow` |
+| R-LIMIT-02 | `PriceLimits.Compute` | `PriceRuleTests.Specified_limit_examples`, `PriceRuleTests.Limits_use_each_results_tick_near_price_boundaries` |
+| R-LIMIT-03 | `PriceLimits.Compute` | `PriceRuleTests.Specified_limit_examples` |
+| R-LIMIT-04 | `MatchingEngine.Place` | `MatchingTests.Rejects_invalid_placement`, `MatchingTests.Accepts_orders_at_both_limits`, `InvariantTests.I2_trades_use_valid_prices` |
+| R-LIMIT-05 | `MatchingEngine.Place` | `MatchingTests.Rejects_price_below_one_even_at_zero_lower_limit`, `BookTests.All_reject_reasons_only_advance_the_sequence` |
+| R-MATCH-01 | `MatchingEngine.Place` | `MatchingTests.Better_price_trades_first_at_resting_price`, `InvariantTests.I4_trades_take_best_price_then_earliest_resting_order` |
+| R-MATCH-02 | `MatchingEngine.Place` | `MatchingTests.Partial_fill_keeps_priority_and_large_order_sweeps_multiple_levels`, `InvariantTests.I4_trades_take_best_price_then_earliest_resting_order` |
+| R-MATCH-03 | `MatchingEngine.Place` | `MatchingTests.Better_price_trades_first_at_resting_price` |
+| R-MATCH-04 | `MatchingEngine.Place` | `MatchingTests.Partial_fill_keeps_priority_and_large_order_sweeps_multiple_levels`, `BookTests.Book_and_queue_reflect_partial_fill_and_cancellation` |
 | R-AUCT-01~05, 02a, 07 | (TASK-002) | |
 | R-VI-01~07, 01a | (TASK-002) | |

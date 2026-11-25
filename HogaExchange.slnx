@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/Hoga.Engine/Hoga.Engine.csproj" />
+  <Project Path="tests/Hoga.Engine.Tests/Hoga.Engine.Tests.csproj" />
+</Solution>
