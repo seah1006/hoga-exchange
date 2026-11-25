@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Hoga.Benchmarks/Hoga.Benchmarks.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Hoga.Bots/Hoga.Bots.csproj" />
     <Project Path="src/Hoga.Experiments/Hoga.Experiments.csproj" />
@@ -9,6 +12,9 @@
     <Project Path="tests/Hoga.Bots.Tests/Hoga.Bots.Tests.csproj" />
     <Project Path="tests/Hoga.Journal.Tests/Hoga.Journal.Tests.csproj" />
     <Project Path="tests/Hoga.Server.Tests/Hoga.Server.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Hoga.LoadTest/Hoga.LoadTest.csproj" />
   </Folder>
   <Project Path="src/Hoga.Engine/Hoga.Engine.csproj" />
   <Project Path="tests/Hoga.Engine.Tests/Hoga.Engine.Tests.csproj" />
