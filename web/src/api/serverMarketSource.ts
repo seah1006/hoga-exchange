@@ -1,5 +1,5 @@
 import { HubConnectionBuilder } from '@microsoft/signalr'
-import type { CancelResponse, Experiment, Explanation, MarketMessage, Messages, OrderRequest, OrderResponse, Scenario, StateHash } from './contract'
+import type { CancelResponse, Experiment, ExperimentSummary, Explanation, MarketMessage, Messages, OrderRequest, OrderResponse, Scenario, StateHash } from './contract'
 import type { MarketConnection, MarketSource } from './marketSource'
 import { readAdminKey } from './adminKey'
 
@@ -146,6 +146,7 @@ export class ServerMarketSource implements MarketSource {
   placeOrder(order: OrderRequest) { return this.request<OrderResponse>('/api/orders', { method: 'POST', body: order }) }
   cancelOrder(orderId: string) { return this.request<CancelResponse>(`/api/orders/${encodeURIComponent(orderId)}`, { method: 'DELETE' }) }
   getExplanation(orderId: string) { return this.lookup<Explanation>(`/api/orders/${encodeURIComponent(orderId)}/explanation`) }
+  getExperimentSummary() { return this.request<ExperimentSummary>('/api/experiments/summary') }
   getExperiment(id: string) { return this.lookup<Experiment>(`/api/experiments/${encodeURIComponent(id)}`) }
   runScenario(name: Scenario) { return this.request<{ ok: boolean }>('/api/admin/scenario', { method: 'POST', body: { name }, admin: true }) }
   crash() { return this.request<{ ok: boolean }>('/api/admin/crash', { method: 'POST', admin: true }) }

@@ -3,7 +3,8 @@ import type { BookSnapshot, Candle, Trade } from './api/contract'
 import type { MarketConnection, MarketSource } from './api/marketSource'
 import { CandleChart } from './CandleChart'
 import { OrderBook, TradeList, ViBanner } from './MarketPanels'
-import { Admin, Comparison } from './DemoPanels'
+import { Admin } from './DemoPanels'
+import { Experiments } from './Experiments'
 import { Orders } from './Orders'
 import { formatPrice, formatTime } from './format'
 
@@ -44,7 +45,7 @@ export function App({ source, speed }: { source: MarketSource; speed?: number })
     return () => { unsubscribeConnection?.(); unsubscribe() }
   }, [source, server])
   return <main>
-    <header><div><span className="eyebrow">시장 구조 실습 · {server ? '서버 데이터' : '목 데이터'}</span><h1>호가 거래소</h1></div><nav className="row" aria-label="화면 선택"><button aria-pressed={view === 'market'} onClick={() => setView('market')}>시장 화면</button><button aria-pressed={view === 'comparison'} onClick={() => setView('comparison')}>비교 화면</button>{server ? <span className="badge" role="status">{connectionLabels[connection]}</span> : <span className="badge">{speed}배속</span>}</nav></header>
+    <header><div><span className="eyebrow">시장 구조 실습 · {server ? '서버 데이터' : '목 데이터'}</span><h1>호가 거래소</h1></div><nav className="row" aria-label="화면 선택"><button aria-pressed={view === 'market'} onClick={() => setView('market')}>시장 화면</button><button aria-pressed={view === 'comparison'} onClick={() => setView('comparison')}>실험 화면</button>{server ? <span className="badge" role="status">{connectionLabels[connection]}</span> : <span className="badge">{speed}배속</span>}</nav></header>
     <Admin server={server} source={source} bookSeq={book?.seq} onReturn={() => setView('market')} />
     {resetCount > 0 && <p key={resetCount} role="status">시장이 초기화되었습니다</p>}
     <div hidden={view !== 'market'}>
@@ -55,7 +56,7 @@ export function App({ source, speed }: { source: MarketSource; speed?: number })
       <div className="market"><OrderBook book={book} onPrice={(value) => setPrice(String(value))} /><div className="stack"><section className="panel"><h2>1분봉 차트</h2><CandleChart candles={candles} /></section><TradeList trades={trades} /></div><Orders key={resetCount} book={book} price={price} onPrice={setPrice} source={source} canPoll={!server || connection === 'connected'} /></div>
     </> : <p>시세 불러오는 중</p>}
     </div>
-    {view === 'comparison' && <Comparison source={source} />}
+    {view === 'comparison' && <Experiments source={source} mock={!server} />}
     <footer>TradingView Lightweight Charts™ · Copyright (с) 2025 TradingView, Inc. <a href="https://www.tradingview.com/">TradingView</a> · <a href={`${import.meta.env.BASE_URL}licenses/lightweight-charts.LICENSE.txt`}>Apache-2.0 라이선스</a></footer>
   </main>
 }

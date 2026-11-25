@@ -130,12 +130,12 @@ test('서버 이력과 라이브에서 동일 seq의 체결을 개별 행으로 
   expect(quantities()).toEqual(['120주', '120주', '80주', '75주'])
 })
 
-test('서버 비교 화면은 demo 별칭으로 조회한다', async () => {
+test('서버 실험 화면은 demo 별칭으로 조회한다', async () => {
   const { fetcher } = setup()
   fetcher.mockResolvedValueOnce(Response.json({}, { status: 404 }))
-  fireEvent.click(screen.getByRole('button', { name: '비교 화면' }))
+  fireEvent.click(screen.getByRole('button', { name: '실험 화면' }))
   expect(await screen.findByText('실험을 찾을 수 없습니다.')).toBeDefined()
-  expect(fetcher.mock.calls[0][0]).toBe('/api/experiments/demo')
+  expect(fetcher.mock.calls.map(([url]) => url)).toContain('/api/experiments/demo')
 })
 
 test.each([['Filled', '체결 완료'], ['Cancelled', '취소'], ['Rejected', '거부']])('%s 상태는 취소 버튼을 표시하지 않는다', async (status, label) => {

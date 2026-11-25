@@ -39,7 +39,23 @@ export interface Explanation {
   reason: string | null; ruleId: string | null; message: string
 }
 export interface ExperimentRun {
-  viEnabled: boolean; series: { timeMs: number; price: number }[]; viEvents: ViEvent[]; minPrice: number; maxPrice: number
+  viEnabled: boolean; series: { timeMs: number; price: number }[]; viEvents: ViEvent[]; minPrice: number; maxPrice: number; minAtMs: number; maxAtMs: number
 }
 export interface Experiment { id: string; seed: number; scenario: Scenario; runs: ExperimentRun[] }
+export interface ExperimentSeed { seed: number; minOn: number; minOff: number; delta: number; viTriggers: number }
+export interface ExperimentScenarioSummary {
+  scenario: Scenario
+  deltaQuantiles: { min: number; p25: number; median: number; p75: number; max: number }
+  counts: { viWorse: number; tie: number; viBetter: number }
+  runsEndingInVi: { viOn: number; viOff: number }
+  seeds: ExperimentSeed[]
+}
+export interface ExperimentSummary {
+  generatedBy: string
+  seeds: { from: number; to: number }
+  durationMs: number
+  demo: { scenario: Scenario; seed: number; rule: string }
+  scenarios: ExperimentScenarioSummary[]
+  caveat: string
+}
 export interface StateHash { seq: number; stateHash: string; restoredFromJournal: boolean }

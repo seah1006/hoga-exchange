@@ -126,3 +126,39 @@ test('목 demo는 시장 시드와 무관하게 시연 시드 16의 실제 ID로
   expect(demo).toEqual(await new MockMarketSource(43).getExperiment('exp-FatFinger-16'))
   expect(demo?.runs.map(({ viEnabled }) => viEnabled)).toEqual([true, false])
 })
+
+test('목 집계와 시드별 목 실험은 계약 형식 및 집계 분포와 일치한다', async () => {
+  const source = new MockMarketSource()
+  const summary = await source.getExperimentSummary()
+  expect(summary.seeds).toEqual({ from: 1, to: 100 })
+  expect(summary.durationMs).toBe(240_000)
+  expect(summary.scenarios.map(({ scenario }) => scenario)).toEqual(['Calm', 'FatFinger', 'PanicSell'])
+  for (const { scenario, seeds, deltaQuantiles, counts, runsEndingInVi } of summary.scenarios) {
+    expect(seeds.map(({ seed }) => seed)).toEqual(Array.from({ length: 100 }, (_, i) => i + 1))
+    const deltas = seeds.map(({ delta }) => delta).sort((a, b) => a - b)
+    expect(deltaQuantiles).toEqual({ min: deltas[0], p25: deltas[24], median: (deltas[49] + deltas[50]) / 2, p75: deltas[74], max: deltas[99] })
+    expect(counts).toEqual({ viWorse: deltas.filter((d) => d < 0).length, tie: deltas.filter((d) => d === 0).length,
+      viBetter: deltas.filter((d) => d > 0).length })
+    const ending = { viOn: 0, viOff: 0 }
+    for (const { seed, delta, minOn, minOff, viTriggers } of seeds) {
+      const result = (await source.getExperiment(`exp-${scenario}-${seed}`))!
+      const [on, off] = result.runs
+      expect(on.minPrice).toBe(minOn)
+      expect(off.minPrice).toBe(minOff)
+      expect(delta).toBe(minOn - minOff)
+      expect(on.viEvents.filter(({ type }) => type === 'Triggered')).toHaveLength(viTriggers)
+      for (const run of result.runs) {
+        expect(run.series.at(-1)?.timeMs).toBe(summary.durationMs)
+        expect(run.minAtMs).toBeLessThanOrEqual(summary.durationMs)
+        expect(run.maxAtMs).toBeLessThanOrEqual(summary.durationMs)
+        expect(run.series.every(({ price }) => price > run.minPrice && price < run.maxPrice)).toBe(true)
+        if (run.viEvents.at(-1)?.type === 'Triggered') ending[run.viEnabled ? 'viOn' : 'viOff']++
+      }
+    }
+    expect(ending).toEqual(runsEndingInVi)
+  }
+  for (const id of ['exp-Calm-0', 'exp-Calm-1001', 'exp-Unknown-42']) {
+    await expect(source.getExperiment(id)).resolves.toBeNull()
+  }
+  await expect(source.getExperiment('exp-PanicSell-1000')).resolves.toMatchObject({ seed: 1000 })
+})
