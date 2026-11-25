@@ -34,6 +34,7 @@
 .experiment-view .vi-on{stroke:var(--vi-on)}
 .experiment-view .vi-off{stroke:var(--vi-off)}
 .experiment-view .extrema circle{fill:#101d32;stroke-width:3}
+.experiment-view .starting-reference{fill:#101d32;stroke-width:2}
 .experiment-view .extrema.vi-off circle{fill:var(--vi-off);stroke:#101d32;stroke-width:1}
 .experiment-view .graph-key{flex-wrap:wrap;align-items:center;gap:8px 18px}
 .experiment-caveat p{line-height:1.55;color:var(--muted)}

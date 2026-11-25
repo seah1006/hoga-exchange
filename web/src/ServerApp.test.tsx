@@ -115,6 +115,30 @@ test('시장 초기화는 체결·봉·내 주문을 비우고 안내를 표시�
   expect(screen.queryByRole('button', { name: 'o-123 취소' })).toBeNull()
 })
 
+test('초기화 신호를 놓쳐도 재연결 첫 호가 순번이 줄면 이전 주문과 이력을 비운다', async () => {
+  const { book, emit, fetcher, showBook, reconnect } = setup()
+  showBook(book)
+  fetcher.mockResolvedValueOnce(Response.json(fixture.accepted)).mockResolvedValueOnce(Response.json(fixture.explanation))
+  fireEvent.click(screen.getByRole('button', { name: '매수 주문' }))
+  expect(await screen.findByRole('button', { name: 'o-123 취소' })).toBeDefined()
+  reconnect()
+  emit('candle', { ...fixture.candle, symbol: 'HOGA', startMs: 60_000 })
+  emit('trade', { ...fixture.trade, symbol: 'HOGA', quantity: 75, aggressorSide: 'Buy' })
+  showBook({ ...book, seq: 2 })
+  expect(screen.getByText('시장이 초기화되었습니다')).toBeDefined()
+  expect(screen.queryByRole('button', { name: 'o-123 취소' })).toBeNull()
+  expect(screen.getByLabelText('봉 시작 시각').textContent).toBe('')
+  expect(within(screen.getByRole('region', { name: '최근 체결' })).getByText('첫 체결 대기 중')).toBeDefined()
+})
+
+test('서버 429는 주문 화면에서 한국어 안내를 표시한다', async () => {
+  const { book, fetcher, showBook } = setup()
+  fetcher.mockResolvedValueOnce(Response.json({ error: 'TooManyRequests' }, { status: 429 }))
+  showBook(book)
+  fireEvent.click(screen.getByRole('button', { name: '매수 주문' }))
+  expect((await screen.findByRole('alert')).textContent?.trim()).toBe('요청이 너무 잦습니다')
+})
+
 test('서버 이력과 라이브에서 동일 seq의 체결을 개별 행으로 표시한다', () => {
   const { book, emit, showBook } = setup()
   const trade = { ...fixture.trade, symbol: 'HOGA', seq: book.seq - 1, quantity: 75, aggressorSide: 'Buy' } as const

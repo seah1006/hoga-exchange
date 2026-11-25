@@ -141,6 +141,9 @@ public sealed class CommandRegistry
 
 public sealed record JournalHeader(int FormatVersion, long BasePrice, string TickSizeRuleId)
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? MarketGeneration { get; init; }
+
     public const int CurrentVersion = 1;
     public static JournalHeader Create(long basePrice, ITickSizeRule rule) =>
         new(CurrentVersion, basePrice, rule.RuleId);

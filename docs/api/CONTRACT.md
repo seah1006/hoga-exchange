@@ -80,6 +80,8 @@
 
 거부 응답 예: `{ "orderId": null, "accepted": false, "reason": "AboveUpperLimit", "ruleId": "R-LIMIT-04" }`
 
+- orderId 형식은 불투명, 장(초기화) 간 유일.
+
 ### 거부 사유 (`reason`)
 | 값 | 뜻 | ruleId |
 |---|---|---|
@@ -99,6 +101,7 @@
 - 없는 주문·실험: HTTP 404 `{ "error": "NotFound", "message": "..." }`
 - 관리자 키 없음: HTTP 401 `{ "error": "Unauthorized", "message": "..." }`
 - 알 수 없는 시나리오: HTTP 400 `{ "error": "UnknownScenario", "message": "..." }`
+- IP 요청 제한 초과: HTTP 429 `{ "error": "TooManyRequests" }` (주문·취소 합산 20건/초, 관리자 API 합산 10건/분, 기본값 임의 지정).
 - 주문 거부는 에러가 아니라 HTTP 200 + `accepted: false`
 
 ### 설명 객체 (`explanation`)
