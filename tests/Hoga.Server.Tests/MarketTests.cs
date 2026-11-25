@@ -44,6 +44,29 @@ public sealed class MarketTests
     }
 
     [Fact]
+    public async Task RejectsOversizedQuantityBeforeJournalAndKeepsServing()
+    {
+        using var app = new MarketFactory();
+        using var client = app.CreateClient();
+        var before = await Get(client, "/api/state/hash");
+        const string huge = "{\"side\":\"Buy\",\"price\":10000,\"quantity\":4611686018427387913}";
+        for (var i = 0; i < 2; i++)
+        {
+            using var content = new StringContent(huge, System.Text.Encoding.UTF8, "application/json");
+            using var response = await client.PostAsync("/api/orders", content);
+            await AssertError(response, HttpStatusCode.BadRequest, "BadRequest");
+        }
+        var after = await Get(client, "/api/state/hash");
+        Assert.Equal(0, after.GetProperty("seq").GetInt64());
+        Assert.Equal(before.GetProperty("stateHash").GetString(), after.GetProperty("stateHash").GetString());
+        Assert.True((await Place(client, "Buy", 10_000, 1_000_000)).GetProperty("accepted").GetBoolean());
+        using var over = new StringContent("{\"side\":\"Sell\",\"price\":10000,\"quantity\":1000001}",
+            System.Text.Encoding.UTF8, "application/json");
+        await AssertError(await client.PostAsync("/api/orders", over), HttpStatusCode.BadRequest, "BadRequest");
+        Assert.Equal(1, (await Get(client, "/api/state/hash")).GetProperty("seq").GetInt64());
+    }
+
+    [Fact]
     public async Task CrashAndRealHostRestartPreserveHashAndExplanation()
     {
         var path = Path.Combine(AppContext.BaseDirectory, $"test-{Guid.NewGuid():N}.jsonl");

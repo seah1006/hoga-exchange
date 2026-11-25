@@ -5,11 +5,12 @@ using System.Text.Json.Serialization;
 using Hoga.Engine;
 using Hoga.Server;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOptions<MarketOptions>().BindConfiguration("Market")
     .Validate(o => o.Speed is >= 1 and <= 1000 && o.RequestTimeoutMs > 0 && o.BasePrice > 0 &&
-        !string.IsNullOrWhiteSpace(o.JournalPath), "시장 설정이 올바르지 않습니다.").ValidateOnStart();
+        o.MaxOrderQuantity is >= 1 and <= 1_000_000_000 && !string.IsNullOrWhiteSpace(o.JournalPath), "시장 설정이 올바르지 않습니다.").ValidateOnStart();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<MarketLoop>();
@@ -30,7 +31,7 @@ app.Use(async (context, next) =>
     }
 });
 
-app.MapPost("/api/orders", async (HttpContext context, MarketLoop market) =>
+app.MapPost("/api/orders", async (HttpContext context, MarketLoop market, IOptions<MarketOptions> options) =>
 {
     var abort = context.RequestAborted;
     PlaceRequest? order;
@@ -42,6 +43,10 @@ app.MapPost("/api/orders", async (HttpContext context, MarketLoop market) =>
     catch (BadHttpRequestException) { return Error(400, "BadRequest", "주문 본문을 읽을 수 없습니다."); }
     if (order is not { Price: long price, Quantity: long quantity } || order.Side is not ("Buy" or "Sell"))
         return Error(400, "BadRequest", "side는 Buy 또는 Sell이며 price와 quantity는 정수여야 합니다.");
+    // 저널 기록 전에 막는다. 0 이하 수량은 엔진의 InvalidQuantity 거부(무해)로 그대로 넘긴다.
+    var max = options.Value.MaxOrderQuantity;
+    if (quantity > max)
+        return Error(400, "BadRequest", $"주문 수량은 {max:N0}주 이하여야 합니다.");
     return Results.Ok(await market.Place(order.Side == "Buy" ? Side.Buy : Side.Sell, price, quantity, abort));
 });
 app.MapDelete("/api/orders/{id}", async (string id, MarketLoop market, CancellationToken abort) =>
