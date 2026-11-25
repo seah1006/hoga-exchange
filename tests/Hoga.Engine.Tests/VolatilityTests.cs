@@ -95,6 +95,25 @@ public sealed class VolatilityTests
     }
 
     [Fact]
+    [Trait("Rule", "R-VI-04")]
+    public void Crossing_order_beyond_vi_threshold_waits_without_trade_or_new_vi()
+    {
+        var s = new Session();
+        s.Place("trigger-bid", Side.Buy, 9400);
+        Assert.Single(s.Place("trigger-ask", Side.Sell, 9400).OfType<ViTriggered>());
+        s.Cancel("trigger-bid", at: 1);
+        Assert.Equal(new OrderAccepted("far-ask"), Assert.Single(s.Place("far-ask", Side.Sell, 9000, at: 2)));
+        Assert.Equal(new OrderAccepted("crossing-bid"),
+            Assert.Single(s.Place("crossing-bid", Side.Buy, 9000, at: 3)));
+        Assert.Equal(OrderStatus.WaitingAuction, s.Engine.GetOrderStatus("crossing-bid"));
+        Assert.Equal(new OrderCancelled("trigger-ask", 1), Assert.Single(s.Cancel("trigger-ask", 4)));
+        var events = s.Advance(150001);
+        Assert.Equal(9000, Assert.Single(events.OfType<AuctionCompleted>()).Price);
+        Assert.Single(events.OfType<ViReleased>());
+        Assert.Equal(TradingPhase.Continuous, s.Engine.Phase);
+    }
+
+    [Fact]
     [Trait("Rule", "R-VI-01")]
     public void Disabled_vi_uses_continuous_matching()
     {
