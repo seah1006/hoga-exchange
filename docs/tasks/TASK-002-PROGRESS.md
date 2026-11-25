@@ -10,7 +10,7 @@
 - 4단계: WaitingAuction과 예상 체결 조회, VI·PRNG·두 기준가격·단일가 호가창을 포함한 상태 해시, I7~I9, RULES 추적표, 두 경계 반례 회귀 테스트.
 
 ## 다음 할 것
-- 완료 조건을 최종 재실행하고 메인 검토로 인계.
+- 구현 작업 없음. 메인 에이전트 독립 검토 및 TASK-003A 통합 대기.
 
 ## 막힌 것
 - 없음.
@@ -23,6 +23,12 @@
 - 3단계 같은 빌드 성공(경고 0, 오류 0), 같은 테스트 75건 통과. 기존 I1~I6는 순수 접속매매 속성을 유지하도록 엔진 옵션에서 VI를 명시적으로 끈다.
 
 - 4단계 같은 빌드 성공(경고 0, 오류 0), 같은 테스트 96건 통과. 빈 상태 고정 해시는 기존 정규 바이트를 독립적으로 재현한 뒤 옵션·단계·참조가격·PRNG 초기 상태와 VI 없음 바이트를 추가해 fc4809edd97aeb5221f3af1325cf0810e6337cd02a8293832f766762f38d0f37로 계산했다.
+
+### 완료 조건 직접 재검증
+1. `dotnet build HogaExchange.slnx -warnaserror`: 성공, 경고 0 / 오류 0.
+2. `dotnet test HogaExchange.slnx`: 96 통과(기존 54 포함) / 실패 0 / 건너뜀 0. `dotnet test HogaExchange.slnx --no-build --filter FullyQualifiedName~InvariantTests --logger 'console;verbosity=detailed'`: I1~I9 각각 200회, 총 1,800회 통과.
+3. `git grep -nE '\b(DateTime\.(Now|UtcNow)|DateTimeOffset|Stopwatch|System\.Random|Random|double|float|decimal|Task\.Run|Parallel|lock)\b' -- 'src/Hoga.Engine/*.cs'`: 출력 없음(종료 1, 정상적으로 매치 없음).
+4. `task/TASK-002` 구현 커밋 `3656db4`, `a40bba0`, `f9e30b1`, `f63730e`; `git diff d2e9d86..HEAD --check` 통과. push 없음.
 
 ## 제안
 - 기본 시드는 0으로 임의 지정했다. 명령 순번 외 논리 시각 역행에 대한 새 거부는 도입하지 않는다.
