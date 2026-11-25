@@ -121,6 +121,7 @@ export class ServerMarketSource implements MarketSource {
       throw new MarketApiError(0, 'NetworkError', '서버에 연결할 수 없습니다.')
     }
     if (!response.ok) {
+      if (response.status === 429) throw new MarketApiError(429, 'TooManyRequests', '요청이 너무 잦습니다')
       const data: unknown = await response.json().catch(() => null)
       const code = data && typeof data === 'object' && 'error' in data && typeof data.error === 'string' ? data.error : 'HttpError'
       const message = data && typeof data === 'object' && 'message' in data && typeof data.message === 'string' && data.message.trim()

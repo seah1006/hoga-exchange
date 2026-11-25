@@ -67,7 +67,18 @@ test('비교 그래프의 최저·최고 표식은 1초 종가가 아닌 계약�
   expect(Number(min.getAttribute('cy'))).toBeCloseTo(302 - (7020 - 7000) / 3500 * 266)
   expect(min.textContent).toContain('7,020원 · 60.275초')
   expect(off.series.every(({ price }) => price > off.minPrice)).toBe(true)
-  expect(screen.getByText('선: 1초 종가, 점: 실제 최저·최고 체결')).toBeDefined()
+  expect(screen.getByText('선: 1초 종가 · ● 실제 체결 극값 · ◇ 시작 기준가(0ms)')).toBeDefined()
+})
+
+test('0ms 극값은 체결 점 대신 시작 기준가 표식으로 표시한다', async () => {
+  const source = new MockMarketSource()
+  const demo = (await source.getExperiment('demo'))!
+  const off = demo.runs.find((run) => !run.viEnabled)!
+  vi.spyOn(source, 'getExperiment').mockResolvedValue({ ...demo, runs: [demo.runs[0], { ...off, maxPrice: off.series[0].price, maxAtMs: 0 }] })
+  render(<Experiments source={source} mock />)
+  const graph = await screen.findByRole('img', { name: graphName })
+  expect(graph.querySelectorAll('.vi-off.extrema circle')).toHaveLength(1)
+  expect(graph.querySelector('.vi-off.extrema .starting-reference')?.textContent).toContain('시작 기준가')
 })
 
 test('요약 503은 demo를 가리지 않으며 재시도하면 분포가 표시된다', async () => {

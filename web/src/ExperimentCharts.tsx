@@ -75,7 +75,7 @@ export function ComparisonChart({ data, demo }: { data: Experiment; demo: boolea
       <div><span>VI 꺼짐 최저가</span><b className="without-vi">{formatPrice(off.minPrice)}</b></div>
       <div><span>최저가 차이</span><strong>{formatDelta(on.minPrice - off.minPrice)}</strong></div></div>
     <p className="graph-key"><b className="with-vi">━ VI 켜짐</b><b className="without-vi">┄ VI 꺼짐</b>
-      <span>선: 1초 종가, 점: 실제 최저·최고 체결</span><span className="auction-key"><i className="auction-chip" aria-hidden="true" />노란 음영: 단일가매매 구간</span></p>
+      <span>선: 1초 종가 · ● 실제 체결 극값 · ◇ 시작 기준가(0ms)</span><span className="auction-key"><i className="auction-chip" aria-hidden="true" />노란 음영: 단일가매매 구간</span></p>
     <svg viewBox="0 0 1160 345" role="img" aria-label="같은 시드의 VI 켜짐과 꺼짐 가격 비교 그래프">
       {intervals.map((i) => <rect key={i.start} className="auction-window" x={x(i.start)} y="36" width={x(i.end) - x(i.start)} height="266" />)}
       {[0, 1, 2, 3, 4].map((i) => Math.round((min + (max - min) * i / 4) / 10) * 10).map((p) => <g key={p}>
@@ -86,6 +86,12 @@ export function ComparisonChart({ data, demo }: { data: Experiment; demo: boolea
       {[on, off].map((run) => <g key={String(run.viEnabled)} className={`extrema ${run.viEnabled ? 'vi-on' : 'vi-off'}`}>
         {([{ time: run.minAtMs, price: run.minPrice, label: '최저' }, { time: run.maxAtMs, price: run.maxPrice, label: '최고' }]).map(({ time, price, label }) => {
           if (!Number.isFinite(time)) return null
+          if (time === 0) {
+            const px = x(time), py = y(price), radius = run.viEnabled ? 7 : 4.5
+            return <path key={label} className="starting-reference" d={`M ${px} ${py - radius} l ${radius} ${radius} l ${-radius} ${radius} l ${-radius} ${-radius} Z`}>
+              <title>{`VI ${run.viEnabled ? '켬' : '끔'} ${label}: 시작 기준가 ${formatPrice(price)}`}</title>
+            </path>
+          }
           return <circle key={label} cx={x(time)} cy={y(price)} r={run.viEnabled ? 7 : 4.5}>
             <title>{`VI ${run.viEnabled ? '켬' : '끔'} ${label}: ${formatPrice(price)} · ${time / 1000}초`}</title>
           </circle>

@@ -23,15 +23,27 @@ export function App({ source, speed }: { source: MarketSource; speed?: number })
   const [price, setPrice] = useState('')
   const [view, setView] = useState<'market' | 'comparison'>('market')
   useEffect(() => {
+    let lastBookSeq: number | undefined
+    let awaitingFirstSnapshot = false
+    const clearHistory = () => { setCandles([]); setTrades([]) }
+    const clearMarket = () => {
+      clearHistory(); setPrice(''); setResetCount((count) => count + 1)
+    }
     const unsubscribeConnection = source.subscribeConnection?.((status) => {
-      if (status === 'syncing') { setCandles([]); setTrades([]) }
+      if (status === 'syncing') { clearHistory(); awaitingFirstSnapshot = true }
       setConnection(status)
     })
     const unsubscribe = source.subscribe((message) => {
       if (server && message.type === 'marketReset') {
-        setBook(undefined); setTrades([]); setCandles([]); setPrice(''); setResetCount((count) => count + 1)
+        lastBookSeq = undefined
+        setBook(undefined); clearMarket()
       }
-      if (message.type === 'bookSnapshot') setBook(message.data)
+      if (message.type === 'bookSnapshot') {
+        if (awaitingFirstSnapshot && lastBookSeq !== undefined && message.data.seq < lastBookSeq) clearMarket()
+        awaitingFirstSnapshot = false
+        lastBookSeq = message.data.seq
+        setBook(message.data)
+      }
       if (message.type === 'trade') {
         const trade = { ...message.data, receipt: nextTradeReceipt.current++ }
         // 서버의 연결별 이력과 라이브는 겹치지 않고, 한 명령의 seq에 여러 체결이 있을 수 있다.
