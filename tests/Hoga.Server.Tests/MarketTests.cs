@@ -78,13 +78,14 @@ public sealed class MarketTests
         try
         {
             JsonElement before;
+            string firstId;
             using (var app = new MarketFactory(path))
             using (var client = app.CreateClient())
             {
                 var first = await Place(client, "Buy", 10_000, 100);
                 Assert.True(first.GetProperty("accepted").GetBoolean());
                 Assert.Equal(JsonValueKind.Null, first.GetProperty("ruleId").ValueKind);
-                var id = first.GetProperty("orderId").GetString();
+                var id = firstId = first.GetProperty("orderId").GetString()!;
                 await Place(client, "Sell", 10_000, 40);
                 var tail = (await Place(client, "Buy", 10_000, 25)).GetProperty("orderId").GetString();
                 var explanation = await Get(client, $"/api/orders/{id}/explanation");
@@ -107,12 +108,15 @@ public sealed class MarketTests
             using var nextClient = restart.CreateClient();
             AssertHash(before, await Get(nextClient, "/api/state/hash"));
             var next = await Place(nextClient, "Buy", 9_990, 3);
-            Assert.Equal("o-4", next.GetProperty("orderId").GetString());
-            using var cancel = await nextClient.DeleteAsync("/api/orders/o-4");
+            var nextId = next.GetProperty("orderId").GetString();
+            Assert.EndsWith("-1", firstId);
+            Assert.Equal(firstId[..^1] + "4", nextId);
+            Assert.Equal("PartiallyFilled", (await Get(nextClient, $"/api/orders/{firstId}/explanation")).GetProperty("status").GetString());
+            using var cancel = await nextClient.DeleteAsync($"/api/orders/{nextId}");
             Assert.True((await Json(cancel)).GetProperty("cancelled").GetBoolean());
-            using var again = await nextClient.DeleteAsync("/api/orders/o-4");
+            using var again = await nextClient.DeleteAsync($"/api/orders/{nextId}");
             Assert.Equal("UnknownOrder", (await Json(again)).GetProperty("reason").GetString());
-            Assert.Equal("Cancelled", (await Get(nextClient, "/api/orders/o-4/explanation")).GetProperty("status").GetString());
+            Assert.Equal("Cancelled", (await Get(nextClient, $"/api/orders/{nextId}/explanation")).GetProperty("status").GetString());
         }
         finally { File.Delete(path); }
     }
@@ -359,7 +363,7 @@ public sealed class MarketTests
             Apply(new PlaceLimitOrder($"o-{i}", Side.Buy, 10_000, 0, "rest", i, 0));
         Assert.NotNull(projection.Explain(engine, "o-1"));
         Assert.Null(projection.Explain(engine, "o-2"));
-        Assert.True(projection.MayHaveExpired("o-2"));
+        Assert.True(projection.MayHaveExpired(2));
         Assert.NotNull(projection.Explain(engine, "o-3"));
         Assert.NotNull(projection.Explain(engine, $"o-{MarketProjection.TerminalCapacity + 2}"));
 
@@ -422,7 +426,7 @@ public sealed class MarketTests
     [Fact]
     public async Task HistoryIsSentOnlyToNewClientInCandleTradeSnapshotOrder()
     {
-        using var app = new MarketFactory(frozen: true);
+        using var app = new MarketFactory(frozen: true, ordersPerSecond: 200);
         using var client = app.CreateClient();
         await using var oldHub = app.Connect();
         var old = Observe(oldHub);
@@ -522,7 +526,7 @@ public sealed class MarketTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await events.Reader.ReadAsync(timeout.Token);
         var order = await Place(client, "Buy", 10_000, 2);
-        Assert.Equal("o-1", order.GetProperty("orderId").GetString());
+        var previousId = order.GetProperty("orderId").GetString()!;
         Assert.Equal(1, (await Get(client, "/healthz")).GetProperty("seq").GetInt64());
         using var unauthorized = await client.PostAsync("/api/admin/reset", null);
         await AssertError(unauthorized, HttpStatusCode.Unauthorized, "Unauthorized");
@@ -538,8 +542,6 @@ public sealed class MarketTests
         Assert.Equal(0, snapshot.Body.GetProperty("seq").GetInt64());
         Assert.Equal(0, snapshot.Body.GetProperty("bids").GetArrayLength());
         Assert.Equal(0, snapshot.Body.GetProperty("logicalTimeMs").GetInt64());
-        using var missing = await client.GetAsync("/api/orders/o-1/explanation");
-        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
         Assert.Empty(JournalReader.Read(app.JournalPath).Commands);
         Assert.Single(JournalReader.Read(Assert.Single(app.Archives())).Commands);
         for (var i = 0; i < 2; i++)
@@ -549,6 +551,33 @@ public sealed class MarketTests
         }
         Assert.Equal(2, app.Archives().Length);
         Assert.All(app.Archives(), path => Assert.Empty(JournalReader.Read(path).Commands));
+        var newId = (await Place(client, "Buy", 10_000, 2)).GetProperty("orderId").GetString();
+        Assert.EndsWith("-1", newId);
+        Assert.NotEqual(previousId, newId);
+        await AssertError(await client.GetAsync($"/api/orders/{previousId}/explanation"), HttpStatusCode.NotFound, "NotFound");
+        await AssertError(await client.DeleteAsync($"/api/orders/{previousId}"), HttpStatusCode.NotFound, "NotFound");
+        Assert.Equal("Resting", (await Get(client, $"/api/orders/{newId}/explanation")).GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task FailedJournalMoveCancelsResetAndPreservesWritableMarket()
+    {
+        using var app = new MarketFactory(frozen: true, isolateJournal: true);
+        using var client = app.CreateClient();
+        var id = (await Place(client, "Buy", 10_000, 2)).GetProperty("orderId").GetString()!;
+        var before = await Get(client, "/api/state/hash");
+        // Directory collision: File.Exists is false, but File.Move cannot create a file here.
+        var blocked = Path.Combine(Path.GetDirectoryName(app.JournalPath)!, "market-20261126-045959.jsonl");
+        Directory.CreateDirectory(blocked);
+        await AssertError(await Admin(client, app.Key, "reset"), HttpStatusCode.ServiceUnavailable, "ServiceUnavailable");
+        Assert.Equal(before.GetRawText(), (await Get(client, "/api/state/hash")).GetRawText());
+        Assert.Equal("Resting", (await Get(client, $"/api/orders/{id}/explanation")).GetProperty("status").GetString());
+        var next = await Place(client, "Buy", 10_000, 2);
+        Assert.Equal(id[..^1] + "2", next.GetProperty("orderId").GetString());
+        Assert.Equal(2, JournalReader.Read(app.JournalPath).Commands.Count());
+        Directory.Delete(blocked);
+        using var reset = await Admin(client, app.Key, "reset");
+        Assert.True((await Json(reset)).GetProperty("ok").GetBoolean());
     }
 
     [Fact]
@@ -665,7 +694,7 @@ public sealed class MarketTests
 
     private sealed class MarketFactory(string? existingPath = null, int speed = 1, bool bots = false,
         bool frozen = false, bool isolateJournal = false, string? dailyReset = null, string intensity = "1.0",
-        bool throwBroadcast = false, string? summaryPath = null) : WebApplicationFactory<Program>
+        bool throwBroadcast = false, string? summaryPath = null, int ordersPerSecond = 20, string? proxyNetwork = null) : WebApplicationFactory<Program>
     {
         public string JournalPath { get; } = existingPath ?? (isolateJournal
             ? Path.Combine(AppContext.BaseDirectory, Guid.NewGuid().ToString("N"), "market.jsonl")
@@ -678,6 +707,8 @@ public sealed class MarketTests
             .ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Market:JournalPath"] = JournalPath, ["Market:AdminKey"] = Key,
+                ["Market:OrdersPerSecond"] = ordersPerSecond.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["Market:TrustedProxyNetwork"] = proxyNetwork,
                 ["Market:Bots"] = bots.ToString(), ["Market:BotIntensity"] = intensity,
                 ["Market:DailyResetLocalTime"] = dailyReset,
                 ["Market:Speed"] = speed.ToString(System.Globalization.CultureInfo.InvariantCulture)
@@ -706,6 +737,49 @@ public sealed class MarketTests
                 if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
             }
             else File.Delete(JournalPath);
+        }
+    }
+
+    [Fact]
+    public async Task OrderAndCancelShareIpLimitButAdminAndReadsDoNot()
+    {
+        using var app = new MarketFactory(ordersPerSecond: 1);
+        using var client = app.CreateClient();
+        using var order = await client.PostAsJsonAsync("/api/orders", new { side = "Buy", price = 10_000, quantity = 1 });
+        Assert.Equal(HttpStatusCode.OK, order.StatusCode);
+        using var limited = await client.DeleteAsync("/api/orders/missing");
+        Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.Equal("{\"error\":\"TooManyRequests\"}", await limited.Content.ReadAsStringAsync());
+        using var health = await client.GetAsync("/healthz");
+        Assert.Equal(HttpStatusCode.OK, health.StatusCode);
+        using var unauthorized = await client.PostAsync("/api/admin/reset", null);
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+    }
+
+    [Fact]
+    public async Task AdminLimitUsesOnlyTheNearestForwardFromConfiguredPrivateSubnet()
+    {
+        using var app = new MarketFactory(proxyNetwork: "172.20.0.0/16");
+        using var client = app.CreateClient();
+        for (var i = 0; i < 10; i++)
+        {
+            Assert.Equal(401, await Status("203.0.113.10", $"198.51.100.{i + 1}"));
+            Assert.Equal(401, await Status("172.20.0.2", $"198.51.100.{i + 1}, 203.0.113.11"));
+        }
+        Assert.Equal(429, await Status("203.0.113.10", "198.51.100.50"));
+        Assert.Equal(429, await Status("172.20.0.2", "198.51.100.50, 203.0.113.11"));
+        Assert.Equal(401, await Status("172.20.0.2", "203.0.113.12"));
+
+        async Task<int> Status(string ip, string forwarded)
+        {
+            var response = await app.Server.SendAsync(context =>
+            {
+                context.Connection.RemoteIpAddress = IPAddress.Parse(ip);
+                context.Request.Method = "POST";
+                context.Request.Path = "/api/admin/reset";
+                context.Request.Headers["X-Forwarded-For"] = forwarded;
+            });
+            return response.Response.StatusCode;
         }
     }
 

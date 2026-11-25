@@ -2,10 +2,13 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using Hoga.Bots;
 using Hoga.Engine;
 using Hoga.Server;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,6 +19,29 @@ builder.Services.AddOptions<MarketOptions>().BindConfiguration("Market")
         o.MaxOrderQuantity is >= 1 and <= 1_000_000_000 && !string.IsNullOrWhiteSpace(o.JournalPath), "시장 설정이 올바르지 않습니다.").ValidateOnStart();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSignalR();
+builder.Services.AddOptions<ForwardedHeadersOptions>().Configure<IConfiguration>((options, config) =>
+{
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+    // No configured network means no header is trusted (empty allowlists alone would trust everyone).
+    if (config["Market:TrustedProxyNetwork"] is not { Length: > 0 } cidr) return;
+    if (!System.Net.IPNetwork.TryParse(cidr, out var network) ||
+        !new[] { "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16" }.Select(System.Net.IPNetwork.Parse)
+            .Any(range => network.PrefixLength >= range.PrefixLength && range.Contains(network.BaseAddress)))
+        throw new InvalidOperationException("Market:TrustedProxyNetwork must be a private IPv4 Docker subnet.");
+    options.KnownIPNetworks.Add(network);
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
+    options.ForwardLimit = 1; // Only the direct Caddy hop; never walk arbitrary client-supplied chains.
+});
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = (context, ct) => new ValueTask(context.HttpContext.Response.WriteAsJsonAsync(
+        new { error = "TooManyRequests" }, ct));
+    options.AddPolicy("orders", context => PerIp(context, TimeSpan.FromSeconds(1),
+        context.RequestServices.GetRequiredService<IConfiguration>().GetValue("Market:OrdersPerSecond", 20))); // 임의 지정
+    options.AddPolicy("admin", context => PerIp(context, TimeSpan.FromMinutes(1), 10)); // 임의 지정
+});
 builder.Services.AddSingleton(new ExperimentSummaryFile(Path.Combine(AppContext.BaseDirectory, "summary.json")));
 builder.Services.AddSingleton(services => new ExperimentCache(
     TimeSpan.FromMilliseconds(services.GetRequiredService<IOptions<MarketOptions>>().Value.RequestTimeoutMs),
@@ -23,6 +49,9 @@ builder.Services.AddSingleton(services => new ExperimentCache(
 builder.Services.AddSingleton<MarketLoop>();
 builder.Services.AddHostedService(services => services.GetRequiredService<MarketLoop>());
 var app = builder.Build();
+app.UseWhen(context => context.Connection.RemoteIpAddress is not null, branch => branch.UseForwardedHeaders());
+app.UseRouting();
+app.UseRateLimiter();
 
 app.Use(async (context, next) =>
 {
@@ -76,9 +105,9 @@ app.MapPost("/api/orders", async (HttpContext context, MarketLoop market, IOptio
     if (quantity > max)
         return Error(400, "BadRequest", $"주문 수량은 {max:N0}주 이하여야 합니다.");
     return Results.Ok(await market.Place(order.Side == "Buy" ? Side.Buy : Side.Sell, price, quantity, abort));
-});
+}).RequireRateLimiting("orders");
 app.MapDelete("/api/orders/{id}", async (string id, MarketLoop market, CancellationToken abort) =>
-    await market.Cancel(id, abort) is { } result ? Results.Ok(result) : MissingOrder());
+    await market.Cancel(id, abort) is { } result ? Results.Ok(result) : MissingOrder()).RequireRateLimiting("orders");
 app.MapGet("/api/orders/{id}/explanation", async (string id, MarketLoop market, CancellationToken abort) =>
 {
     var (result, expired) = await market.ExplainOrder(id, abort);
@@ -109,7 +138,8 @@ app.MapGet("/api/experiments/{id}", async (string id, ExperimentCache experiment
         return Error(503, "ServiceUnavailable", "실험 결과를 기다리는 시간이 초과되었습니다.");
     }
 });
-app.MapPost("/api/admin/scenario", async (HttpContext context, MarketLoop market, IConfiguration configuration) =>
+var admin = app.MapGroup("/api/admin").RequireRateLimiting("admin");
+admin.MapPost("/scenario", async (HttpContext context, MarketLoop market, IConfiguration configuration) =>
 {
     if (!IsAdmin(context, configuration)) return Unauthorized();
     if (!context.Request.HasJsonContentType() ||
@@ -125,20 +155,30 @@ app.MapPost("/api/admin/scenario", async (HttpContext context, MarketLoop market
     await market.SelectScenario(scenario, context.RequestAborted);
     return Results.Ok(new { ok = true });
 });
-app.MapPost("/api/admin/crash", async (HttpContext context, MarketLoop market, IConfiguration configuration) =>
+admin.MapPost("/crash", async (HttpContext context, MarketLoop market, IConfiguration configuration) =>
 {
     if (!IsAdmin(context, configuration)) return Unauthorized();
     await market.Crash(context.RequestAborted);
     return Results.Ok(new { ok = true });
 });
-app.MapPost("/api/admin/reset", async (HttpContext context, MarketLoop market, IConfiguration configuration) =>
+admin.MapPost("/reset", async (HttpContext context, MarketLoop market, IConfiguration configuration) =>
 {
     if (!IsAdmin(context, configuration)) return Unauthorized();
-    await market.Reset(context.RequestAborted);
+    if (!await market.Reset(context.RequestAborted)) return Error(503, "ServiceUnavailable", "현재 장을 보관할 수 없어 초기화를 취소했습니다.");
     return Results.Ok(new { ok = true });
 });
 app.MapHub<MarketHub>("/hubs/market");
 app.Run();
+
+static RateLimitPartition<string> PerIp(HttpContext context, TimeSpan window, int permits)
+{
+    var ip = context.Connection.RemoteIpAddress;
+    if (ip?.IsIPv4MappedToIPv6 == true) ip = ip.MapToIPv4();
+    return RateLimitPartition.GetFixedWindowLimiter(ip?.ToString() ?? "unknown", _ => new()
+    {
+        PermitLimit = Math.Max(1, permits), Window = window, QueueLimit = 0
+    });
+}
 
 static IResult Error(int status, string error, string message) => Results.Json(new { error, message }, statusCode: status);
 static IResult MissingOrder() => Error(404, "NotFound", "주문을 찾을 수 없습니다.");

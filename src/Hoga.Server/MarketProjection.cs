@@ -16,9 +16,7 @@ internal sealed class MarketProjection
     private long _lastEvictedSequence;
     internal IEnumerable<object> Candles => _candles.Values;
     internal IEnumerable<object> Trades => _trades;
-    internal bool MayHaveExpired(string id) => id.StartsWith("o-", StringComparison.Ordinal) &&
-        long.TryParse(id.AsSpan(2), NumberStyles.None, CultureInfo.InvariantCulture, out var seq) &&
-        seq > 0 && seq <= _lastEvictedSequence && id == "o-" + seq.ToString(CultureInfo.InvariantCulture);
+    internal bool MayHaveExpired(long seq) => seq > 0 && seq <= _lastEvictedSequence;
 
     private void Complete(string id)
     {

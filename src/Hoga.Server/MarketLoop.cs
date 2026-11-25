@@ -59,11 +59,7 @@ internal sealed class MarketLoop(
 
     internal Task<long> Health(CancellationToken ct) => Read(() => _seq, ct);
 
-    internal Task Reset(CancellationToken ct) => Invoke(async () =>
-    {
-        await ResetMarket("Admin", time.GetUtcNow());
-        return true;
-    }, ct);
+    internal Task<bool> Reset(CancellationToken ct) => Invoke(() => ResetMarket("Admin", time.GetUtcNow()), ct);
 
     internal Task SelectScenario(Scenario scenario, CancellationToken ct) => Invoke(async () =>
     {
@@ -78,7 +74,7 @@ internal sealed class MarketLoop(
     internal Task<object> Place(Side side, long price, long quantity, CancellationToken ct) => Invoke(async () =>
     {
         var next = checked(_seq + 1);
-        var id = "o-" + next.ToString(CultureInfo.InvariantCulture);
+        var id = OrderId(next);
         var events = await Process(new PlaceLimitOrder(id, side, price, quantity, "rest", next, LogicalNow()));
         var failure = events.OfType<OrderRejected>().SingleOrDefault();
         return (object)new { orderId = failure is null ? id : null, accepted = failure is null,
@@ -95,15 +91,20 @@ internal sealed class MarketLoop(
 
     internal async Task<(object? Result, bool Expired)> ExplainOrder(string id, CancellationToken ct)
     {
-        var (result, candidate, generation) = await Read(() =>
-            (_projection.Explain(_engine, id), _projection.MayHaveExpired(id), _generation), ct);
-        if (result is not null || !candidate) return (result, false);
+        var (result, seq, generation) = await Read(() =>
+        {
+            var prefix = OrderIdPrefix;
+            var candidate = id.StartsWith(prefix, StringComparison.Ordinal) &&
+                long.TryParse(id.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var sequence) &&
+                _projection.MayHaveExpired(sequence) && id == OrderId(sequence) ? sequence : 0;
+            return (_projection.Explain(_engine, id), candidate, _generation);
+        }, ct);
+        if (result is not null || seq == 0) return (result, false);
         // No unbounded tombstones: verify against disk outside the market loop.
         await _expiredRead.WaitAsync(ct);
         try
         {
             if (generation != _generation) return (null, false);
-            var seq = long.Parse(id.AsSpan(2), CultureInfo.InvariantCulture);
             var expired = await Task.Run(() => JournalReader.Read(_path).Commands
                 .TakeWhile(c => { ct.ThrowIfCancellationRequested(); return c.Sequence <= seq; })
                 .Any(c => c.Sequence == seq && c is PlaceLimitOrder p && p.OrderId == id), ct);
@@ -174,7 +175,11 @@ internal sealed class MarketLoop(
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
             _header = JournalHeader.Create(configuration.Value.BasePrice, new TickSizeTable());
             _bots = CreateBots();
-            if (File.Exists(_path)) Restore(rebuildBots: true);
+            if (File.Exists(_path))
+            {
+                _header = _header with { MarketGeneration = JournalReader.Read(_path).Header.MarketGeneration };
+                Restore(rebuildBots: true);
+            }
             else StartEmpty();
             RestartClock();
             if (MarketOptions.TryParseResetTime(configuration.Value.DailyResetLocalTime, out var localTime))
@@ -215,8 +220,12 @@ internal sealed class MarketLoop(
     private LiveBots? CreateBots() => configuration.Value.Bots
         ? new(configuration.Value.BotSeed, configuration.Value.BasePrice, configuration.Value.BotIntensity) : null;
 
+    private string OrderIdPrefix => _header.MarketGeneration is { } generation ? $"o-{generation:N}-" : "o-";
+    private string OrderId(long sequence) => OrderIdPrefix + sequence.ToString(CultureInfo.InvariantCulture);
+
     private void StartEmpty()
     {
+        _header = _header with { MarketGeneration = Guid.NewGuid() };
         _writer = new JournalWriter(_path, _header);
         _engine = _header.CreateEngine();
         _projection = new();
@@ -240,16 +249,13 @@ internal sealed class MarketLoop(
         _nextDailyReset = TimeZoneInfo.ConvertTimeToUtc(target, _seoul!);
     }
 
-    private async Task ResetMarket(string reason, DateTimeOffset now)
+    private async ValueTask<bool> ResetMarket(string reason, DateTimeOffset now)
     {
         // The expired-order reader opens the live journal outside this queue. Drain that single reader
         // before rotating (Windows disallows renaming a file with its read handle open).
         await _expiredRead.WaitAsync(_stopping);
         try
         {
-            _generation++;
-            _writer!.Dispose();
-            _writer = null;
             var directory = Path.GetDirectoryName(_path)!;
             var archiveTime = TimeZoneInfo.ConvertTime(now, _seoul ?? TimeZoneInfo.FindSystemTimeZoneById("Asia/Seoul"));
             string archive;
@@ -259,7 +265,18 @@ internal sealed class MarketLoop(
                 archiveTime = archiveTime.AddSeconds(1); // Same-second admin resets must never overwrite an archive.
             }
             while (File.Exists(archive));
-            File.Move(_path, archive);
+            _writer!.Dispose();
+            _writer = null;
+            try { File.Move(_path, archive); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                logger.LogWarning(ex, "Market reset cancelled: could not archive the current journal");
+                _writer = JournalWriter.OpenExisting(_path, _header);
+                if (_writer.LastSequence != _seq)
+                    throw new InvalidDataException("Journal sequence changed during failed rotation.");
+                return false;
+            }
+            _generation++;
             StartEmpty();
             _bots = CreateBots();
             RestartClock();
@@ -278,6 +295,7 @@ internal sealed class MarketLoop(
         await Broadcast("marketReset", new { symbol = "HOGA", atUtc = now.UtcDateTime, reason });
         _snapshotPending = true;
         await PublishSnapshotIfDue();
+        return true;
     }
 
     private void Restore(bool rebuildBots = false)
@@ -303,8 +321,8 @@ internal sealed class MarketLoop(
     {
         if (_nextDailyReset is { } due && time.GetUtcNow() is var now && now >= due)
         {
-            await ResetMarket("Daily", now);
-            ScheduleDailyReset(now);
+            if (await ResetMarket("Daily", now)) ScheduleDailyReset(now);
+            else _nextDailyReset = now.AddMinutes(5); // 임의 지정: avoid hammering a failing filesystem.
         }
         // Continuous matching does not require periodic input. Avoid idle writes and sequence/hash churn.
         if (_projection.Vi is not null)
@@ -334,7 +352,7 @@ internal sealed class MarketLoop(
             await _bots!.Step(tick, _engine, id => CancelBot(id, tick), async (account, side, price, quantity) =>
             {
                 var next = checked(_seq + 1);
-                await Process(new PlaceLimitOrder("o-" + next.ToString(CultureInfo.InvariantCulture), side,
+                await Process(new PlaceLimitOrder(OrderId(next), side,
                     price, quantity, account, next, Math.Max(tick, _projection.LogicalTimeMs)));
             });
         }
