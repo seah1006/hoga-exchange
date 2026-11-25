@@ -38,7 +38,7 @@ public class BookTests
     {
         var buy = new MatchingEngine(9_940, new TickSizeTable());
         var sell = new MatchingEngine(9_940, new TickSizeTable());
-        Assert.Equal("7387705c8f778ab7c9f0661d985c937cab2d09b7e288397966df05221db44ca4", buy.ComputeStateHash());
+        Assert.Equal("fc4809edd97aeb5221f3af1325cf0810e6337cd02a8293832f766762f38d0f37", buy.ComputeStateHash());
         buy.Process(new PlaceLimitOrder("same", Side.Buy, 9_990, 6, "a", 1, 0));
         sell.Process(new PlaceLimitOrder("same", Side.Sell, 9_990, 6, "a", 1, 0));
         Assert.NotEqual(buy.ComputeStateHash(), sell.ComputeStateHash());

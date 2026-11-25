@@ -159,4 +159,39 @@ public sealed class VolatilityTests
         Assert.Equal(new QueuePosition(1, 100), s.Engine.GetQueuePosition("a5"));
         Assert.Equal(new BookLevel(7830, 150, 2), Assert.Single(s.Engine.GetBook(1).Asks));
     }
+
+    [Fact]
+    [Trait("Rule", "R-AUCT-08")]
+    public void Empty_tick_at_reference_clears_strictly_better_orders()
+    {
+        var s = new Session();
+        s.Place("low-bid", Side.Buy, 9400);
+        s.Place("low-ask", Side.Sell, 9400);
+        s.Place("high-bid", Side.Buy, 12380);
+        s.Place("high-ask", Side.Sell, 11760, 19);
+        Assert.Equal(new IndicativeAuction(10000, 1), s.Engine.GetIndicativeAuction());
+        var trade = Assert.Single(s.Advance(150000).OfType<Trade>());
+        Assert.Equal("high-bid", trade.BuyOrderId);
+        Assert.Equal("low-ask", trade.SellOrderId);
+        var book = s.Engine.GetBook(1);
+        Assert.True(book.Bids[0].Price < book.Asks[0].Price);
+    }
+    [Fact]
+    [Trait("Rule", "R-AUCT-02a")]
+    public void Adjacent_tick_exception_closes_without_crossed_book()
+    {
+        var s = new Session();
+        s.Place("low-bid", Side.Buy, 9400);
+        s.Place("low-ask", Side.Sell, 9400);
+        s.Place("high-bid", Side.Buy, 9420);
+        s.Place("high-ask", Side.Sell, 9410, 19);
+        Assert.Equal(new IndicativeAuction(9410, 1), s.Engine.GetIndicativeAuction());
+        var trade = Assert.Single(s.Advance(150000).OfType<Trade>());
+        Assert.Equal("high-bid", trade.BuyOrderId);
+        Assert.Equal("low-ask", trade.SellOrderId);
+        Assert.Equal(9410, trade.Price);
+        var book = s.Engine.GetBook(1);
+        Assert.Equal(new BookLevel(9400, 1, 1), Assert.Single(book.Bids));
+        Assert.Equal(new BookLevel(9410, 19, 1), Assert.Single(book.Asks));
+    }
 }

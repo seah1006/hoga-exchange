@@ -4,35 +4,39 @@ public sealed record IndicativeAuction(long Price, long Quantity);
 
 public sealed partial class MatchingEngine
 {
-    internal IndicativeAuction? CalculateAuction() => FindAuction(
-        GetLevels(_bids, _bids.Count), GetLevels(_asks, _asks.Count), DynamicReferencePrice);
+    private IndicativeAuction? CalculateAuction() => FindAuction(
+        GetLevels(_bids, _bids.Count), GetLevels(_asks, _asks.Count), DynamicReferencePrice, _tickSizeRule);
 
     internal static IndicativeAuction? FindAuction(
-        IReadOnlyList<BookLevel> bids, IReadOnlyList<BookLevel> asks, long previousPrice)
+        IReadOnlyList<BookLevel> bids, IReadOnlyList<BookLevel> asks, long previousPrice, ITickSizeRule tickRule)
     {
         if (bids.Count == 0 || asks.Count == 0 || bids[0].Price < asks[0].Price)
             return null; // R-AUCT-07
 
-        // Visit actual limit prices in ascending order. B+ and S- are strictly better prices,
-        // B0 and S0 are the quantity at P. R-AUCT-01: V = min(B+ + B0, S- + S0).
-        // R-AUCT-02: V >= B+ and V >= S-; of V-B+ and V-S-, one fills its whole
-        // level and the other fills >= 1. An absent level has zero shares to fill.
-        // R-AUCT-02a: retain exactly two positive, balanced prices even when the
-        // at-price one-share condition does not hold. Compare volume after eligibility.
-        // Wide running sums are only arithmetic scratch space, not stored order quantities.
+        // R-AUCT-08: include empty tick levels; only [best ask, best bid] can match.
+        // B+ and S- are strictly better quantities, B0 and S0 are quantities at P.
+        // R-AUCT-01: V = min(B+ + B0, S- + S0).
+        // R-AUCT-02: V >= B+ and V >= S-; one side fills its P level entirely,
+        // and the other fills >= 1 if it has orders at P (R-AUCT-08).
         Int128 buy = 0;
         foreach (var bid in bids)
-            buy += bid.Quantity;
+            if (bid.Price >= asks[0].Price)
+                buy += bid.Quantity;
         Int128 sell = 0;
         var best = new List<long>();
-        var balanced = new List<(long Price, Int128 Volume)>();
+        var withoutMinimum = new List<long>();
         Int128 max = 0;
+        Int128 withoutMinimumMax = 0;
         var bi = bids.Count - 1;
+        while (bids[bi].Price < asks[0].Price)
+            bi--;
         var ai = 0;
-        while (bi >= 0 || ai < asks.Count)
+        for (var price = asks[0].Price; price <= bids[0].Price;
+             price += tickRule is TickSizeTable ? tickRule.GetTickSize(price) : 1)
         {
-            var price = Math.Min(bi >= 0 ? bids[bi].Price : long.MaxValue,
-                ai < asks.Count ? asks[ai].Price : long.MaxValue);
+            // Standard KRX bands align. For a custom rule, do not skip prices based on the prior tick size.
+            if (!tickRule.IsOnTick(price))
+                continue;
             var atBuy = bi >= 0 && bids[bi].Price == price ? bids[bi--].Quantity : 0;
             var atSell = ai < asks.Count && asks[ai].Price == price ? asks[ai++].Quantity : 0;
             var betterSell = sell;
@@ -43,29 +47,32 @@ public sealed partial class MatchingEngine
             {
                 var buyFill = volume - betterBuy;
                 var sellFill = volume - betterSell;
-                if ((buyFill == atBuy && sellFill >= 1) || (sellFill == atSell && buyFill >= 1))
-                    AddCandidate(price, volume);
-                if (buy == sell)
-                    balanced.Add((price, volume));
+                if (buyFill == atBuy || sellFill == atSell)
+                    AddCandidate(withoutMinimum, ref withoutMinimumMax, price, volume);
+                if ((buyFill == atBuy && (atSell == 0 || sellFill >= 1)) ||
+                    (sellFill == atSell && (atBuy == 0 || buyFill >= 1)))
+                    AddCandidate(best, ref max, price, volume);
             }
             buy = betterBuy;
         }
-        if (balanced.Count == 2)
-            foreach (var (price, volume) in balanced)
-                if (!best.Contains(price))
-                    AddCandidate(price, volume);
-        return best.Count == 0 ? null : new(ChooseAuctionPrice(best, previousPrice), checked((long)max));
+        if (best.Count != 0)
+            return new(ChooseAuctionPrice(best, previousPrice), checked((long)max));
+        // R-AUCT-02a (§23(6)): two prices can match when only the one-share
+        // condition fails. Extending this to more than two is a simulator policy.
+        if (withoutMinimum.Count >= 2)
+            return new(ChooseAuctionPrice(withoutMinimum, previousPrice), checked((long)withoutMinimumMax));
+        throw new InvalidOperationException("Crossed auction book has no eligible clearing price.");
+    }
 
-        void AddCandidate(long price, Int128 volume)
+    private static void AddCandidate(List<long> candidates, ref Int128 max, long price, Int128 volume)
+    {
+        if (volume > max)
         {
-            if (volume > max)
-            {
-                max = volume;
-                best.Clear();
-            }
-            if (volume == max)
-                best.Add(price);
+            max = volume;
+            candidates.Clear();
         }
+        if (volume == max)
+            candidates.Add(price);
     }
 
     // R-AUCT-05: exact match, otherwise smallest price above previous; if

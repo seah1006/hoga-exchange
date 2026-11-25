@@ -62,6 +62,7 @@ R-TICK-03 근거: KRX 투자자 교육자료(2022-02), 교보·한양·한화증
 | R-AUCT-04 | 모든 단일가매매는 예정 마감시점부터 30초 이내 임의 시각에 종료(랜덤 엔드). 엔진은 주입된 시드로 종료 시각을 정한다 | 1단계 |
 | R-AUCT-05 | 합치가격이 둘 이상이면 (1) 직전 가격과 같은 합치가격이 있으면 그 가격, (2) 직전 가격이 가장 높은 합치가격보다 높거나 가장 낮은 합치가격보다 낮으면 직전 가격에 가장 가까운 가격, (3) 직전 가격이 합치가격들 사이에 있으면 직전 가격보다 높은 합치가격 중 가장 가까운 가격 | 1단계 |
 | R-AUCT-07 | 단일가매매에서 체결 수량이 0이면 연장하지 않고 접속매매로 전환한다 | 1단계 |
+| R-AUCT-08 | 합치가격 후보는 호가가 없는 가격을 포함해 호가단위 격자 위 모든 가격(상하한가 이내). 4항 2호의 1주 조건은 그 가격에 다른 쪽 호가가 있을 때만 적용 | 1단계 (조문 해석, 메인 결정 2026-11-25, 확신도 중간) |
 | R-AUCT-06 | 시가(또는 매매 재개 후 첫 가격)가 상·하한가로 정해지면 해당 쪽 호가에 수량 배분 | 2단계 |
 
 출처: 한국거래소 규정/제도 「단일가매매시 체결방법」(유가증권), 「매매체결방법」(코스닥), 유가증권시장 업무규정 제23조 4~6항(코스닥 업무규정 제18조 같은 문구). R-AUCT-05의 (3)은 2025-02-05 개정으로 신설됐다(메인 에이전트가 조문 사본으로 직접 확인). R-AUCT-07은 유가 시행세칙 제35조 2항(2022-12-22 신설).
@@ -120,5 +121,19 @@ VI 테스트 예시(증권사 안내 예시를 바탕으로 호가 배치를 임
 | R-MATCH-02 | `MatchingEngine.Place` | `MatchingTests.Partial_fill_keeps_priority_and_large_order_sweeps_multiple_levels`, `InvariantTests.I4_trades_take_best_price_then_earliest_resting_order` |
 | R-MATCH-03 | `MatchingEngine.Place` | `MatchingTests.Better_price_trades_first_at_resting_price` |
 | R-MATCH-04 | `MatchingEngine.Place` | `MatchingTests.Partial_fill_keeps_priority_and_large_order_sweeps_multiple_levels`, `BookTests.Book_and_queue_reflect_partial_fill_and_cancellation` |
-| R-AUCT-01~05, 02a, 07 | (TASK-002) | |
-| R-VI-01~07, 01a | (TASK-002) | |
+| R-AUCT-01 | `MatchingEngine.FindAuction`, `ExecuteAuction` | `AuctionPriceTests.Krx_book_clears_at_7830_for_600`, `AuctionInvariantTests.I8_every_auction_has_only_one_trade_price` |
+| R-AUCT-02 | `MatchingEngine.FindAuction` | `AuctionPriceTests.Krx_book_clears_at_7830_for_600`, `AuctionInvariantTests.I9_book_is_not_crossed_after_auction` |
+| R-AUCT-02a | `MatchingEngine.FindAuction` | `AuctionPriceTests.Adjacent_candidates_without_at_price_fill_can_clear`, `VolatilityTests.Adjacent_tick_exception_closes_without_crossed_book` |
+| R-AUCT-03 | `MatchingEngine.ExecuteAuction` | `VolatilityTests.Krx_example_matches_600_and_allocates_at_price_in_fifo_order` |
+| R-AUCT-04 | `SplitMix64.NextAuctionExtensionMs`, `MatchingEngine.TryTriggerVi` | `AuctionTimingTests.SplitMix64_matches_reference_vector`, `VolatilityTests.Auction_ends_at_seeded_time_in_inclusive_window` |
+| R-AUCT-05 | `MatchingEngine.ChooseAuctionPrice` | `AuctionPriceTests.Rule_examples_choose_expected_price` |
+| R-AUCT-07 | `MatchingEngine.CompleteAuction` | `VolatilityTests.Cancel_during_auction_can_leave_no_match_and_release_before_next_command` |
+| R-AUCT-08 | `MatchingEngine.FindAuction` | `AuctionPriceTests.Empty_tick_prices_prevent_crossed_release_in_regression_book`, `AuctionPriceTests.Grid_uses_the_tick_of_each_price_band` |
+| R-VI-01 | `MatchingEngine.Place`, `TryTriggerVi` | `VolatilityTests.Dynamic_threshold_is_inclusive`, `AuctionInvariantTests.I7_continuous_trades_do_not_touch_either_trigger` |
+| R-VI-01a | `MatchingEngine.Place` | `VolatilityTests.Sweep_fills_1200_before_9400_and_queues_remaining_300` |
+| R-VI-02 | `MatchingEngine.TryTriggerVi` | `VolatilityTests.Dynamic_threshold_is_inclusive` |
+| R-VI-03 | `MatchingEngine.TryTriggerVi` | `VolatilityTests.Static_uses_cumulative_move_then_resets_and_can_trigger_again` |
+| R-VI-04 | `MatchingEngine.Process`, `Place`, `TryTriggerVi` | `AuctionQueryTests.Indicative_auction_does_not_mutate_and_orders_report_waiting_until_release`, `VolatilityTests.Cancel_during_auction_can_leave_no_match_and_release_before_next_command` |
+| R-VI-05 | `MatchingEngine.CompleteAuction` | `VolatilityTests.Static_uses_cumulative_move_then_resets_and_can_trigger_again` |
+| R-VI-06 | `MatchingEngine.TouchesVi` | `VolatilityTests.Dynamic_threshold_is_inclusive`, `AuctionInvariantTests.I7_continuous_trades_do_not_touch_either_trigger` |
+| R-VI-07 | `MatchingEngine.CompleteAuction` | `VolatilityTests.Static_uses_cumulative_move_then_resets_and_can_trigger_again`, `VolatilityTests.Cancel_during_auction_can_leave_no_match_and_release_before_next_command` |
