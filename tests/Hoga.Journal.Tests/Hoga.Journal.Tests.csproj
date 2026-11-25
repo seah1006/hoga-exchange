@@ -12,5 +12,8 @@
     <PackageReference Include="FsCheck.Xunit" Version="3.6.0" />
     <Using Include="Xunit" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="Golden/basic.jsonl" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
 

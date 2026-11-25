@@ -182,6 +182,164 @@ public sealed class JournalTests : IDisposable
         return hash == Recovery.Restore(path).StateHash;
     }
 
+    [Fact]
+    public void GoldenJournalHasExactBytesAndFixedReplayHash()
+    {
+        WriteThree();
+        var golden = Path.Combine(AppContext.BaseDirectory, "Golden", "basic.jsonl");
+        Assert.Equal(File.ReadAllBytes(golden), File.ReadAllBytes(FilePath));
+        Assert.Equal("7a983442c1c2156ee5a6b2befbba9f00904d0b947a0a71683dc9a22ac6e80b9f", Recovery.Restore(golden).StateHash);
+    }
+
+    [Fact]
+    public void CrLfJournalReplays()
+    {
+        WriteThree();
+        var hash = Recovery.Restore(FilePath).StateHash;
+        File.WriteAllText(FilePath, File.ReadAllText(FilePath).Replace("\n", "\r\n", StringComparison.Ordinal));
+        Assert.Equal(hash, Recovery.Restore(FilePath).StateHash);
+    }
+
+    [Fact]
+    public void KoreanAndSpecialOrderIdRoundTrips()
+    {
+        const string id = "주문-한글+<>\"\\\u2028";
+        string hash;
+        using (var session = new JournaledEngine(FilePath, Header))
+        {
+            session.Process(new PlaceLimitOrder(id, Side.Buy, 1000, 1, "계좌", 1, 0));
+            hash = session.Engine.ComputeStateHash();
+        }
+        Assert.Equal(hash, Recovery.Restore(FilePath).StateHash);
+        Assert.Equal(id, Assert.Single(JournalReader.Read(FilePath).Commands).OrderId);
+    }
+
+    [Fact]
+    public void EmptyJournalCannotRecover()
+    {
+        File.WriteAllBytes(FilePath, []);
+        Assert.Throws<InvalidDataException>(() => Recovery.Restore(FilePath));
+    }
+
+    [Fact]
+    public void HeaderOnlyRestoresEmptyEngine()
+    {
+        using (var writer = new JournalWriter(FilePath, Header)) { }
+        var restored = Recovery.Restore(FilePath);
+        Assert.Equal(0, restored.LastSequence);
+        Assert.Empty(restored.Warnings);
+        Assert.Equal(Header.CreateEngine().ComputeStateHash(), restored.StateHash);
+        Assert.Equal(0, ReplayVerifier.Verify(FilePath).EventCount);
+    }
+
+    [Fact]
+    public void StructuralErrorsAreNotRecordedAndDoNotPoisonSession()
+    {
+        using var session = new JournaledEngine(FilePath, Header);
+        var before = ReadSharedBytes();
+        OrderCommand[] invalid = [new PlaceLimitOrder("a", (Side)7, 1000, 1, "a", 1, 0),
+            new CancelOrder(null!, 1, 0), new PlaceLimitOrder("a", Side.Buy, 1000, 1, null!, 1, 0),
+            new CancelOrder("a", 2, 0)];
+        foreach (var command in invalid)
+        {
+            Assert.ThrowsAny<ArgumentException>(() => session.Process(command));
+            Assert.Equal(before, ReadSharedBytes());
+        }
+        Assert.Throws<ArgumentNullException>(() => session.Process(null!));
+        Assert.IsType<OrderRejected>(Assert.Single(session.Process(new PlaceLimitOrder("a", Side.Buy, 1000, 0, "a", 1, 0))));
+        Assert.Equal(1, Recovery.Restore(FilePath).LastSequence);
+    }
+
+    [Theory]
+    [InlineData("side", true)]
+    [InlineData("accountId", false)]
+    [InlineData("sequence", false)]
+    [InlineData("price", false)]
+    public void MissingOrInvalidDtoFieldsFailWithLineNumber(string field, bool invalidEnum)
+    {
+        WriteThree();
+        Rewrite(1, node => { var payload = node["payload"]!.AsObject(); if (invalidEnum) payload[field] = "Unknown"; else payload.Remove(field); });
+        Assert.Contains("line 2", Assert.Throws<InvalidDataException>(() => Recovery.Restore(FilePath)).Message);
+    }
+
+    [Fact]
+    public void WriteIoFailureDoesNotApplyCommandOrRetryOnDispose()
+    {
+        var stream = new FailingStream();
+        var writer = new JournalWriter(stream, Header);
+        using var session = new JournaledEngine(writer, Header);
+        var before = session.Engine.ComputeStateHash();
+        stream.Fail = true;
+        Assert.Throws<IOException>(() => session.Process(new CancelOrder("a", 1, 0)));
+        Assert.Equal(before, session.Engine.ComputeStateHash());
+        Assert.Equal(0, writer.LastSequence);
+        Assert.Throws<InvalidOperationException>(() => session.Process(new CancelOrder("a", 1, 0)));
+        Assert.Throws<InvalidOperationException>(() => writer.Flush());
+        var writes = stream.WriteAttempts;
+        session.Dispose();
+        Assert.Equal(writes, stream.WriteAttempts);
+    }
+    private sealed class FailingStream : MemoryStream
+    {
+        public bool Fail { get; set; }
+        public int WriteAttempts { get; private set; }
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            WriteAttempts++;
+            if (Fail) throw new IOException("Injected disk failure.");
+            base.Write(buffer, offset, count);
+        }
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            WriteAttempts++;
+            if (Fail) throw new IOException("Injected disk failure.");
+            base.Write(buffer);
+        }
+    }
+
+    [Fact]
+    public void CustomTickRuleIsUsedForWritingAndRecovery()
+    {
+        var rule = new CustomRule();
+        var header = JournalHeader.Create(1000, rule);
+        using (var session = new JournaledEngine(FilePath, header, resolveRule: _ => rule))
+            session.Process(new CancelOrder("a", 1, 0));
+        Assert.Equal(1, Recovery.Restore(FilePath, resolveRule: _ => rule).LastSequence);
+        Assert.True(ReplayVerifier.Verify(FilePath, resolveRule: _ => rule).IsMatch);
+    }
+    private sealed class CustomRule : ITickSizeRule
+    {
+        public string RuleId => "test-custom/v1"; // 임의 지정 테스트 규칙 ID.
+        public long GetTickSize(long price) => 1;
+        public bool IsOnTick(long price) => true;
+        public long FloorToTick(long price) => price;
+    }
+
+    private byte[] ReadSharedBytes()
+    {
+        using var input = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var output = new MemoryStream();
+        input.CopyTo(output);
+        return output.ToArray();
+    }
+
+    [Fact]
+    public void EngineExceptionDuringRecoveryIncludesLineAndSequence()
+    {
+        WriteThree();
+        var ex = Assert.Throws<InvalidDataException>(() => Recovery.Restore(FilePath, resolveRule: _ => new ThrowingRule()));
+        Assert.Contains("line 2", ex.Message);
+        Assert.Contains("seq 1", ex.Message);
+        Assert.IsType<InvalidOperationException>(ex.InnerException);
+    }
+    private sealed class ThrowingRule : ITickSizeRule
+    {
+        public string RuleId => new TickSizeTable().RuleId;
+        public long GetTickSize(long price) => 1;
+        public bool IsOnTick(long price) => throw new InvalidOperationException("Injected rule failure.");
+        public long FloorToTick(long price) => price;
+    }
+
     private void Rewrite(int index, Action<JsonNode> modify)
     {
         var lines = File.ReadAllLines(FilePath);

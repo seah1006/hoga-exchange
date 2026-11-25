@@ -28,7 +28,14 @@ public sealed class JournalWriter : IDisposable
     public long LastSequence { get; private set; }
     public JournalWriter(string path, JournalHeader header, CommandRegistry? registry = null, int flushEvery = 1,
         Func<string, ITickSizeRule>? resolveRule = null)
-        : this(new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read), header, registry, flushEvery, resolveRule) { }
+        : this(CreateStream(path, header, flushEvery, resolveRule), header, registry, flushEvery, resolveRule) { }
+    private static FileStream CreateStream(string path, JournalHeader header, int flushEvery,
+        Func<string, ITickSizeRule>? resolveRule)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(flushEvery, 1);
+        _ = header.CreateEngine(resolveRule);
+        return new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+    }
     internal JournalWriter(Stream stream, JournalHeader header, CommandRegistry? registry = null, int flushEvery = 1,
         Func<string, ITickSizeRule>? resolveRule = null)
     {

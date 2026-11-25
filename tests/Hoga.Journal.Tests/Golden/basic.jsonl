@@ -1,0 +1,4 @@
+{"seq":0,"type":"header","payload":{"formatVersion":1,"basePrice":1000,"tickSizeRuleId":"KRX-2023-01-25/v1"},"checksum":"330973f2f7acf802"}
+{"seq":1,"type":"place-limit/v1","payload":{"orderId":"a","side":"Buy","price":990,"quantity":5,"accountId":"account","sequence":1,"logicalTimeMs":0},"checksum":"48371a1d79da76e6"}
+{"seq":2,"type":"place-limit/v1","payload":{"orderId":"b","side":"Sell","price":1010,"quantity":3,"accountId":"account","sequence":2,"logicalTimeMs":1},"checksum":"848253a07e222944"}
+{"seq":3,"type":"cancel/v1","payload":{"orderId":"a","sequence":3,"logicalTimeMs":2},"checksum":"b8bbf0e14bccb829"}

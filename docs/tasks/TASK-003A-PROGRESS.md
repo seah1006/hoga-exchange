@@ -36,3 +36,8 @@
 - 쓰기 실패는 faulted로 전환하며 Dispose 시 실패 버퍼를 재전송하지 않음.
 - 검증: dotnet build HogaExchange.slnx -warnaserror 경고 0/오류 0; dotnet test HogaExchange.slnx --no-build 엔진 54 + 저널 19 = 73 통과.
 - 다음 단계: 골든 파일 및 경계/IO 회귀 테스트, ADR 갱신.
+- 2단계 완료: 골든 저널 4줄의 정확한 바이트 및 고정 상태 해시, CRLF/한글·특수문자 ID/빈 파일/헤더만/구조 오류 무기록/DTO 누락·Side 오류/쓰기 IO 실패와 중단·Dispose 재쓰기 방지/커스텀 규칙/복구 엔진 예외 줄·seq 테스트 추가.
+- Windows 활성 writer 파일은 ReadAllBytes의 공유 모드로 읽을 수 없어 회귀 테스트도 FileShare.ReadWrite로 수정. 실제 reader와 같은 공유 정책을 사용한다.
+- ADR 0004 갱신: 고정 DTO 필드와 초안 v1 호환 범위, 스트리밍·이벤트 미보관, 오류 래핑, 배치 flush의 승인된 마지막 배치 유실 가능성 명시. 헤더 엔진 옵션은 변경하지 않음(TASK-003B).
+- 최종 검증: dotnet build HogaExchange.slnx -warnaserror 경고 0/오류 0; dotnet test HogaExchange.slnx --no-build 엔진 54 + 저널 32 = 총 86 통과, 실패/건너뜀 0. git diff --check 통과. git diff --stat main...HEAD -- src/Hoga.Engine 출력 없음. 테스트 임시 디렉터리는 Dispose로 정리.
+- 리뷰 요청 1~4와 작은 P2(7) 완료. 6은 문서화 완료. 남은 범위는 TASK-003B(헤더 엔진 옵션/스냅샷/AdvanceTime). 자기 작업 브랜치 커밋만 수행, push 없음.
