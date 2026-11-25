@@ -1,0 +1,3 @@
+
+# Golden journal bytes must retain LF on Windows.
+tests/Hoga.Journal.Tests/Golden/*.jsonl -text

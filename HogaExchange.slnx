@@ -1,4 +1,10 @@
 <Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Hoga.Journal/Hoga.Journal.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Hoga.Journal.Tests/Hoga.Journal.Tests.csproj" />
+  </Folder>
   <Project Path="src/Hoga.Engine/Hoga.Engine.csproj" />
   <Project Path="tests/Hoga.Engine.Tests/Hoga.Engine.Tests.csproj" />
 </Solution>
