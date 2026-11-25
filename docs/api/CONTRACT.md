@@ -1,6 +1,7 @@
-# 서버-화면 계약 (CONTRACT) v0.3
+# 서버-화면 계약 (CONTRACT) v0.4
 
 변경 이력:
+- v0.4 (2026-11-25) 실험 요약 `GET /api/experiments/summary`, run의 `minAtMs`·`maxAtMs`, 시장 초기화 `POST /api/admin/reset`과 `marketReset` 메시지, `GET /healthz` 추가 (TASK-009, TASK-007). 모두 추가만 하고 기존 필드는 바꾸지 않는다.
 - v0.3 (2026-11-25) 관리자 헤더 `X-Admin-Key`, 주문 수량 서버 한도(400), 접속 직후 메시지 순서 추가 (REVIEW-5). 접속 직후 이력 재전송은 TASK-008에서 구현.
 - v0.2 (2026-11-25) 거부 사유 목록, 실패 응답 형식, 없는 주문·실험의 404 추가 (REVIEW-2 P2-6).
 
@@ -73,6 +74,9 @@
 | `POST /api/admin/scenario` | `{ "name": "FatFinger" }` (`"FatFinger"` \| `"PanicSell"` \| `"Calm"`) | `{ "ok": true }` |
 | `POST /api/admin/crash` | - | `{ "ok": true }` (서버가 재시작을 흉내 낸다) |
 | `GET /api/state/hash` | - | `{ "seq": 1024, "stateHash": "ab12...", "restoredFromJournal": true }` |
+| `GET /api/experiments/summary` (v0.4) | - | 아래 실험 요약 객체 |
+| `POST /api/admin/reset` (v0.4) | - | `{ "ok": true }` 저널을 보관하고 빈 시장으로 다시 시작. 관리자 키 필요 |
+| `GET /healthz` (v0.4) | - | `{ "ok": true, "seq": 1024 }` 처리 루프가 살아 있으면 200, 아니면 503 |
 
 거부 응답 예: `{ "orderId": null, "accepted": false, "reason": "AboveUpperLimit", "ruleId": "R-LIMIT-04" }`
 
@@ -127,4 +131,33 @@
 }
 ```
 - 두 run은 같은 시드·같은 시나리오이고 VI 여부만 다르다.
+- (v0.4) 각 run에 `minAtMs`, `maxAtMs`(최저·최고 체결이 처음 나온 논리 시각) 추가. `series`는 1초마다의 마지막 체결가라 순간 최저가가 선에 안 보일 수 있다. 화면은 이 두 점을 별도 표식으로 그리고 "선: 1초 종가"를 표기한다.
 - 실험 ID (v0.3): `exp-{scenario}-{seed}` (예: `exp-FatFinger-16`, 시드 1~1000, 임의 지정). 별칭 `demo`는 `docs/experiments/SUMMARY.md`의 시연 시드 선정 규칙으로 정한 FatFinger 실험이며 응답의 `id`는 실제 ID(`exp-FatFinger-16`)다. 형식이 틀리거나 범위 밖이면 404. 화면의 비교 화면은 `demo`를 조회한다.
+
+### 실험 요약 객체 (v0.4, `GET /api/experiments/summary`)
+`Hoga.Experiments --batch`가 `docs/experiments/summary.json`으로 미리 만들고 서버는 그 파일을 그대로 돌려준다(서버에서 600 run을 다시 계산하지 않는다).
+```json
+{
+  "generatedBy": "dotnet run --project src/Hoga.Experiments -- --batch --out docs/experiments",
+  "seeds": { "from": 1, "to": 100 },
+  "durationMs": 240000,
+  "demo": { "scenario": "FatFinger", "seed": 16, "rule": "FatFinger Δ가 중앙값에 가장 가까운 시드, 동률이면 작은 시드" },
+  "scenarios": [
+    {
+      "scenario": "FatFinger",
+      "deltaQuantiles": { "min": 1500, "p25": 2270, "median": 2465, "p75": 2650, "max": 2990 },
+      "counts": { "viWorse": 0, "tie": 0, "viBetter": 100 },
+      "runsEndingInVi": { "viOn": 6, "viOff": 0 },
+      "seeds": [ { "seed": 1, "minOn": 9500, "minOff": 7020, "delta": 2480, "viTriggers": 1 } ]
+    }
+  ],
+  "caveat": "임의 지정한 봇·호가 깊이·충격 크기·관측 구간에 한정된 결과다."
+}
+```
+- `delta = minOn - minOff`(원). 양수면 VI 켬 쪽 최저가가 높았다(덜 떨어졌다). 중앙값은 0.5원 단위가 나올 수 있어 소수 한 자리까지 허용한다.
+
+### `marketReset` (v0.4, SignalR)
+```json
+{ "symbol": "HOGA", "atUtc": "2026-11-26T20:00:00Z", "reason": "Daily" }
+```
+- `reason`: `"Daily"`(정기 초기화) | `"Admin"`(관리자). 화면은 체결·봉·내 주문 목록을 비우고 이어서 오는 `bookSnapshot`으로 다시 그린다.
