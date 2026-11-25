@@ -13,10 +13,12 @@ internal sealed class MarketOptions
     public bool Bots { get; set; } = true;
     public long BotSeed { get; set; } = 42; // 임의 지정
     public double BotIntensity { get; set; } = 1.0;
-    public string? DailyResetLocalTime { get; set; }
+    public string? DailyResetLocalTime { get; set; } = "05:00"; // Asia/Seoul, 임의 지정
 
     internal static bool TryParseResetTime(string? value, out TimeOnly localTime) =>
         TimeOnly.TryParseExact(value, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out localTime);
+    public long InitialCash { get; set; } = 10_000_000; // 임의 지정
+    public long InitialShares { get; set; } = 1_000; // 임의 지정
     public long BasePrice { get; set; } = 10_000;
     public int Speed { get; set; } = 1;
     public int RequestTimeoutMs { get; set; } = 5000;
@@ -29,9 +31,9 @@ internal sealed class MarketOptions
 internal sealed class MarketUnavailableException(Exception? inner = null)
     : Exception("The market loop is unavailable.", inner);
 
-internal sealed class MarketLoop(
+internal sealed partial class MarketLoop(
     IOptions<MarketOptions> configuration, IWebHostEnvironment environment, TimeProvider time,
-    IHubContext<MarketHub> hub, ILogger<MarketLoop> logger) : BackgroundService
+    IHubContext<MarketHub> hub, ILogger<MarketLoop> logger, IServiceScopeFactory scopes) : BackgroundService
 {
     private static readonly TimeSpan Cadence = TimeSpan.FromMilliseconds(100);
     private readonly Channel<IRequest> _requests = Channel.CreateBounded<IRequest>(new BoundedChannelOptions(1024)
@@ -71,25 +73,29 @@ internal sealed class MarketLoop(
     internal Task<T> Read<T>(Func<T> work, CancellationToken ct) =>
         Invoke(() => ValueTask.FromResult(work()), ct, readOnly: true);
 
-    internal Task<object> Place(Side side, long price, long quantity, CancellationToken ct) => Invoke(async () =>
+    internal Task<object> Place(string owner, Side side, long price, long quantity, CancellationToken ct) => Invoke(async () =>
     {
         var next = checked(_seq + 1);
         var id = OrderId(next);
-        var events = await Process(new PlaceLimitOrder(id, side, price, quantity, "rest", next, LogicalNow()));
+        if (_withdrawn.Contains(owner)) return (object)new { orderId = (string?)null, accepted = false, reason = "UnknownOrder", ruleId = (string?)null };
+        var command = new PlaceLimitOrder(id, side, price, quantity, owner, next, LogicalNow());
+        if (_ledger.Check(command) is { } reason)
+            return (object)new { orderId = (string?)null, accepted = false, reason, ruleId = (string?)null };
+        var events = await Process(command);
         var failure = events.OfType<OrderRejected>().SingleOrDefault();
         return (object)new { orderId = failure is null ? id : null, accepted = failure is null,
             reason = failure?.Reason.ToString(), ruleId = failure?.RuleId };
     }, ct);
 
-    internal Task<object?> Cancel(string id, CancellationToken ct) => Invoke(async () =>
+    internal Task<object?> Cancel(string owner, string id, CancellationToken ct) => Invoke(async () =>
     {
-        if (!_projection.KnowsOrder(id)) return (object?)null;
+        if (!_projection.OwnsOrder(id, owner)) return (object?)null;
         var events = await Process(new CancelOrder(id, checked(_seq + 1), LogicalNow()));
         var failure = events.OfType<OrderRejected>().SingleOrDefault();
         return (object?)new { orderId = id, cancelled = failure is null, reason = failure?.Reason.ToString() };
     }, ct);
 
-    internal async Task<(object? Result, bool Expired)> ExplainOrder(string id, CancellationToken ct)
+    internal async Task<(object? Result, bool Expired)> ExplainOrder(string owner, string id, CancellationToken ct)
     {
         var (result, seq, generation) = await Read(() =>
         {
@@ -97,7 +103,7 @@ internal sealed class MarketLoop(
             var candidate = id.StartsWith(prefix, StringComparison.Ordinal) &&
                 long.TryParse(id.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var sequence) &&
                 _projection.MayHaveExpired(sequence) && id == OrderId(sequence) ? sequence : 0;
-            return (_projection.Explain(_engine, id), candidate, _generation);
+            return (_projection.OwnsOrder(id, owner) ? _projection.Explain(_engine, id) : null, candidate, _generation);
         }, ct);
         if (result is not null || seq == 0) return (result, false);
         // No unbounded tombstones: verify against disk outside the market loop.
@@ -107,7 +113,7 @@ internal sealed class MarketLoop(
             if (generation != _generation) return (null, false);
             var expired = await Task.Run(() => JournalReader.Read(_path).Commands
                 .TakeWhile(c => { ct.ThrowIfCancellationRequested(); return c.Sequence <= seq; })
-                .Any(c => c.Sequence == seq && c is PlaceLimitOrder p && p.OrderId == id), ct);
+                .Any(c => c.Sequence == seq && c is PlaceLimitOrder p && p.OrderId == id && p.AccountId == owner), ct);
             return (null, expired);
         }
         finally { _expiredRead.Release(); }
@@ -115,10 +121,10 @@ internal sealed class MarketLoop(
 
     internal Task<object> Hash(CancellationToken ct) => Read<object>(() => new
     {
-        seq = _seq, stateHash = _engine.ComputeStateHash(), restoredFromJournal = _restored
+        seq = _seq, stateHash = _engine.ComputeStateHash(), ledgerHash = _ledger.Hash(), restoredFromJournal = _restored
     }, ct);
 
-    internal Task<bool> Subscribe(string id, CancellationToken ct) => Invoke(async () =>
+    internal Task<bool> Subscribe(string id, string? owner, CancellationToken ct) => Invoke(async () =>
     {
         using var send = CancellationTokenSource.CreateLinkedTokenSource(_stopping, ct);
         send.CancelAfter(TimeSpan.FromSeconds(1));
@@ -129,7 +135,9 @@ internal sealed class MarketLoop(
             foreach (var candle in _projection.Candles) await client.SendAsync("candle", candle, send.Token);
             foreach (var trade in _projection.Trades) await client.SendAsync("trade", trade, send.Token);
             await client.SendAsync("bookSnapshot", _projection.Snapshot(_engine, _seq), send.Token);
+            if (owner is not null) await client.SendAsync("accountUpdate", AccountView(owner), send.Token);
             await hub.Groups.AddToGroupAsync(id, MarketHub.Group, send.Token);
+            if (owner is not null) _online[id] = owner;
             return true;
         }
         catch (Exception ex)
@@ -142,6 +150,7 @@ internal sealed class MarketLoop(
     internal Task Crash(CancellationToken ct) => Invoke(() =>
     {
         var before = _engine.ComputeStateHash();
+        var beforeLedger = _ledger.Hash();
         _writer!.Dispose();
         _writer = null;
         _engine = null!;
@@ -149,7 +158,7 @@ internal sealed class MarketLoop(
         Restore();
         var after = _engine.ComputeStateHash();
         logger.LogInformation("Crash simulation: seq={Sequence}, before={BeforeHash}, after={AfterHash}", _seq, before, after);
-        if (!StringComparer.Ordinal.Equals(before, after)) throw new InvalidDataException("Crash recovery hash mismatch.");
+        if (!StringComparer.Ordinal.Equals(before, after) || beforeLedger != _ledger.Hash()) throw new InvalidDataException("Crash recovery hash mismatch.");
         return ValueTask.FromResult(true);
     }, ct);
 
@@ -302,10 +311,13 @@ internal sealed class MarketLoop(
     {
         _writer = JournalWriter.OpenExisting(_path, _header);
         var projection = new MarketProjection();
+        _ledger = NewLedger();
+        _round = File.Exists(RoundPath) ? File.ReadAllText(RoundPath) : RoundAt(time.GetUtcNow());
         var restored = Recovery.Restore(_path, expectedHeader: _header,
             observe: (command, events) =>
             {
                 projection.Apply(command, events, publish: false);
+                _ledger.Apply(command, events);
                 if (rebuildBots) _bots?.Observe(command, events);
             });
         _projection = projection;
@@ -353,7 +365,7 @@ internal sealed class MarketLoop(
             {
                 var next = checked(_seq + 1);
                 await Process(new PlaceLimitOrder(OrderId(next), side,
-                    price, quantity, account, next, Math.Max(tick, _projection.LogicalTimeMs)));
+                    price, quantity, "bot:" + account, next, Math.Max(tick, _projection.LogicalTimeMs)));
             });
         }
     }
@@ -369,6 +381,7 @@ internal sealed class MarketLoop(
         _seq = command.Sequence;
         _bots?.Observe(command, events);
         var messages = _projection.Apply(command, events, publish: true);
+        var accounts = _ledger.Apply(command, events);
         if (events.Any(e => e is not OrderRejected) || command is AdvanceTime) _snapshotPending = true;
         foreach (var (name, payload) in messages) await Broadcast(name, payload);
         await PublishSnapshotIfDue();
