@@ -23,6 +23,14 @@
 - `npm ci --no-audit --no-fund`: 274 패키지 설치. `npm run lint`, `npm run test -- --run`(3파일·8개, VI 표시/해제 시장 화면 렌더 포함), `npm run build`(41 모듈 변환) 통과.
 - 다음: 로컬 개발 서버 및 실제 브라우저 표시 확인, Git 작업 범위 최종 확인.
 
+## 5단계 완료 조건 확인
+1. `npm ci --no-audit --no-fund`: 274 패키지 설치, 종료 0.
+2. `npm run lint`: 경고·오류 없이 통과. `npm run test -- --run`: 3파일·9개 통과(포맷 3, 목 4, 렌더 2). `npm run build`: 타입 검사와 41 모듈 번들 생성 통과.
+3. `VITE_USE_MOCK=true`로 `npm run dev`: Vite 6.3.5, `http://127.0.0.1:5173/` 및 `/src/App.tsx` HTTP 200. jsdom으로 시장·비교 전환, 주문 거부 배지, 해시 복구 표시를 확인했다. 실제 브라우저의 캔버스와 프로젝터 화면은 이 구현 세션에서 미검증이며 메인 에이전트에 확인을 요청했다.
+4. `git status --short --branch`와 `git check-ignore`: `web/node_modules/`, `web/dist/`, `web/.env`가 상태 목록에 없고 제외 규칙에 포함된다.
+5. `task/TASK-006A` 단계별 의미 단위 커밋. 수정 범위는 web 및 이 파일. push 없음.
+- 남은 것: 실제 브라우저 시각 확인, npm 11의 esbuild 스크립트 안내와 ESLint 9.28 지원 종료 경고의 후속 정리(이번 실행에는 영향 없음).
+
 ## 제안
 - `triggerPrice`를 그리드에 맞는 잠정 체결가로 해석. `logicalTimeMs`는 거래소 논리 시각이며 2분 VI는 기본 10배속에서 실제 12초. 실시간 연장 여부 필드는 계약에 없어 목은 연장하지 않는다.
 - `exp-1`은 FatFinger 고정 비교 실험. 알 수 없는 주문/실험 조회의 불일치 예외는 목에서 `null`로 처리하며 006B에서 HTTP 404 매핑을 확정할 것을 제안한다.
