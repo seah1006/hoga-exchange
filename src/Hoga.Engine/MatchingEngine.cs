@@ -11,14 +11,17 @@ public sealed partial class MatchingEngine
     private readonly Dictionary<string, LinkedListNode<RestingOrder>> _active = new(StringComparer.Ordinal);
     private readonly HashSet<string> _acceptedIds = new(StringComparer.Ordinal);
     private long _lastSequence;
+    private readonly EngineOptions _options;
 
-    public MatchingEngine(long basePrice, ITickSizeRule tickSizeRule)
+    public MatchingEngine(long basePrice, ITickSizeRule tickSizeRule, EngineOptions? options = null)
     {
         (UpperLimit, LowerLimit, _) = PriceLimits.Compute(basePrice, tickSizeRule);
         BasePrice = basePrice;
         _tickSizeRule = tickSizeRule;
+        _options = options ?? new();
     }
 
+    public TradingPhase Phase { get; private set; }
     public long BasePrice { get; }
     public long UpperLimit { get; }
     public long LowerLimit { get; }
@@ -34,6 +37,7 @@ public sealed partial class MatchingEngine
         {
             PlaceLimitOrder order => Place(order),
             CancelOrder cancel => Cancel(cancel),
+            AdvanceTime => Array.Empty<EngineEvent>(),
             _ => throw new ArgumentException("Unsupported command type.", nameof(command)),
         };
         _lastSequence = command.Sequence;

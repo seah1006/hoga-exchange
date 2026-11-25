@@ -10,3 +10,6 @@ public sealed record PlaceLimitOrder(
 
 public sealed record CancelOrder(string OrderId, long Sequence, long LogicalTimeMs)
     : OrderCommand(Sequence, LogicalTimeMs, OrderId);
+
+public sealed record AdvanceTime(long Sequence, long LogicalTimeMs)
+    : OrderCommand(Sequence, LogicalTimeMs, string.Empty);
