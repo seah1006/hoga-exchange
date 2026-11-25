@@ -127,3 +127,4 @@
 }
 ```
 - 두 run은 같은 시드·같은 시나리오이고 VI 여부만 다르다.
+- 실험 ID (v0.3): `exp-{scenario}-{seed}` (예: `exp-FatFinger-16`, 시드 1~1000, 임의 지정). 별칭 `demo`는 `docs/experiments/SUMMARY.md`의 시연 시드 선정 규칙으로 정한 FatFinger 실험이며 응답의 `id`는 실제 ID(`exp-FatFinger-16`)다. 형식이 틀리거나 범위 밖이면 404. 화면의 비교 화면은 `demo`를 조회한다.
