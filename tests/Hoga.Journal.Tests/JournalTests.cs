@@ -188,8 +188,21 @@ public sealed class JournalTests : IDisposable
         WriteThree();
         var golden = Path.Combine(AppContext.BaseDirectory, "Golden", "basic.jsonl");
         Assert.Equal(File.ReadAllBytes(golden), File.ReadAllBytes(FilePath));
-        Assert.Equal("7a983442c1c2156ee5a6b2befbba9f00904d0b947a0a71683dc9a22ac6e80b9f", Recovery.Restore(golden).StateHash);
+
+        // 저널 재생 해시는 같은 명령을 엔진에 직접 넣은 해시와 같아야 한다(교차 검증).
+        var direct = new MatchingEngine(1000, new TickSizeTable());
+        direct.Process(new PlaceLimitOrder("a", Side.Buy, 990, 5, "account", 1, 0));
+        direct.Process(new PlaceLimitOrder("b", Side.Sell, 1010, 3, "account", 2, 1));
+        direct.Process(new CancelOrder("a", 3, 2));
+        var replayed = Recovery.Restore(golden).StateHash;
+        Assert.Equal(direct.ComputeStateHash(), replayed);
+
+        // 고정값: TASK-002가 엔진 상태 해시에 VI 설정·단계·참조가격·난수 상태를 추가해 형식이 바뀜
+        // (병합 시 메인 통합 수정, 2026-11-25). 엔진 해시 형식이 다시 바뀌면 이 값도 이유와 함께 갱신한다.
+        Assert.Equal(GoldenReplayHash, replayed);
     }
+
+    private const string GoldenReplayHash = "c295211d29702b6bd2cb699d72c724dc18f1852492c6937756111cf118656b15";
 
     [Fact]
     public void CrLfJournalReplays()
