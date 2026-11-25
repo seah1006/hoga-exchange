@@ -14,7 +14,7 @@ public sealed record ExperimentViEvent(string Type, string Kind, long AtMs, long
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? AuctionPrice = null);
 
 public sealed record ExperimentRun(bool ViEnabled, IReadOnlyList<PricePoint> Series,
-    IReadOnlyList<ExperimentViEvent> ViEvents, long MinPrice, long MaxPrice);
+    IReadOnlyList<ExperimentViEvent> ViEvents, long MinPrice, long MaxPrice, long MinAtMs, long MaxAtMs);
 
 public sealed record Experiment(string Id, long Seed, string Scenario, IReadOnlyList<ExperimentRun> Runs)
 {

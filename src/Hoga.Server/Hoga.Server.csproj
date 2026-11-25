@@ -3,6 +3,9 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="../../docs/experiments/summary.json" Link="summary.json"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
+             Condition="Exists('../../docs/experiments/summary.json')" />
     <ProjectReference Include="../Hoga.Bots/Hoga.Bots.csproj" />
     <ProjectReference Include="../Hoga.Engine/Hoga.Engine.csproj" />
     <ProjectReference Include="../Hoga.Journal/Hoga.Journal.csproj" />

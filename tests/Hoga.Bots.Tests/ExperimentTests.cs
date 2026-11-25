@@ -69,7 +69,7 @@ public sealed class ExperimentTests
     }
 
     [Fact]
-    public void Json_uses_v02_field_names_and_string_event_kinds()
+    public void Json_uses_v04_field_names_and_string_event_kinds()
     {
         var experiment = ExperimentRunner.RunExperiment(42, Scenario.FatFinger).Experiment;
         using var json = JsonDocument.Parse(experiment.ToJson());
@@ -82,7 +82,7 @@ public sealed class ExperimentTests
         Assert.Equal(2, runs.GetArrayLength());
         Assert.True(runs[0].GetProperty("viEnabled").GetBoolean());
         Assert.False(runs[1].GetProperty("viEnabled").GetBoolean());
-        Assert.Equal(["viEnabled", "series", "viEvents", "minPrice", "maxPrice"], Keys(runs[0]));
+        Assert.Equal(["viEnabled", "series", "viEvents", "minPrice", "maxPrice", "minAtMs", "maxAtMs"], Keys(runs[0]));
         Assert.Equal(["timeMs", "price"], Keys(runs[0].GetProperty("series")[0]));
         var events = runs[0].GetProperty("viEvents").EnumerateArray().ToArray();
         var trigger = events.First();

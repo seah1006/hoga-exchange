@@ -484,6 +484,29 @@ public sealed class MarketTests
             c.Sequence > before.GetProperty("seq").GetInt64()));
     }
 
+    [Fact]
+    public async Task Summary_serves_the_packaged_json_without_changes()
+    {
+        using var app = new MarketFactory();
+        using var client = app.CreateClient();
+        using var response = await client.GetAsync("/api/experiments/summary");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+        var expected = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "summary.json"));
+        Assert.Equal(expected, await response.Content.ReadAsByteArrayAsync());
+    }
+
+    [Fact]
+    public async Task Summary_returns_503_when_the_packaged_file_is_absent()
+    {
+        using var app = new MarketFactory(summaryPath: Path.Combine(AppContext.BaseDirectory, $"missing-{Guid.NewGuid():N}", "summary.json"));
+        using var client = app.CreateClient();
+        using var response = await client.GetAsync("/api/experiments/summary");
+
+        await AssertError(response, HttpStatusCode.ServiceUnavailable, "ServiceUnavailable");
+    }
+
     private static async Task WaitUntil(Func<bool> condition)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -537,7 +560,7 @@ public sealed class MarketTests
         Assert.True(after.GetProperty("restoredFromJournal").GetBoolean());
     }
 
-    private sealed class MarketFactory(string? existingPath = null, int speed = 1, bool bots = false, bool frozen = false) : WebApplicationFactory<Program>
+    private sealed class MarketFactory(string? existingPath = null, int speed = 1, bool bots = false, bool frozen = false, string? summaryPath = null) : WebApplicationFactory<Program>
     {
         public string JournalPath { get; } = existingPath ?? Path.Combine(AppContext.BaseDirectory, $"test-{Guid.NewGuid():N}.jsonl");
         public string Key { get; } = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
@@ -550,7 +573,11 @@ public sealed class MarketTests
                 ["Market:Bots"] = bots.ToString(),
                 ["Market:Speed"] = speed.ToString(System.Globalization.CultureInfo.InvariantCulture)
             }))
-            .ConfigureServices(services => services.AddSingleton<TimeProvider>(Clock));
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton<TimeProvider>(Clock);
+                if (summaryPath is not null) services.AddSingleton(new ExperimentSummaryFile(summaryPath));
+            });
 
         public HubConnection Connect() => new HubConnectionBuilder()
             .WithUrl(new Uri(Server.BaseAddress, "/hubs/market"), options =>

@@ -6,6 +6,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Hoga.Bots/Hoga.Bots.csproj" />
+    <None Include="../../docs/experiments/SUMMARY.md" Link="ExperimentDocs/SUMMARY.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../docs/experiments/summary.json" Link="ExperimentDocs/summary.json" CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="4.0.1" PrivateAssets="all" />

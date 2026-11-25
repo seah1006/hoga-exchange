@@ -27,6 +27,9 @@ internal sealed class MarketSimulation
     private long _previousClose = BasePrice;
     private long _minPrice = BasePrice;
     private long _maxPrice = BasePrice;
+    // Keep the opening reference as a price candidate, but prefer a real trade at that price.
+    private long? _minAtMs;
+    private long? _maxAtMs;
     private long _downStreak;
     private ViTriggered? _activeVi;
 
@@ -44,11 +47,11 @@ internal sealed class MarketSimulation
         };
     }
 
-    public (ExperimentRun Run, RunDiagnostics Diagnostics) Run()
+    public (ExperimentRun Run, RunDiagnostics Diagnostics) Run(Action<Trade, long>? observeTrade = null)
     {
         for (_timeMs = TickMs; _timeMs <= EndMs; _timeMs += TickMs)
         {
-            Process(new AdvanceTime(++_sequence, _timeMs));
+            Process(new AdvanceTime(++_sequence, _timeMs), observeTrade);
             _fairValue = Math.Clamp(_fairValue + 10 * (_fairValueStream.NextBelow(3) - 1),
                 _engine.LowerLimit, _engine.UpperLimit);
             foreach (var bot in _bots)
@@ -56,7 +59,7 @@ internal sealed class MarketSimulation
                 var view = new MarketView(_timeMs, _fairValue, _lastPrice, _previousClose, _downStreak,
                     _engine.LowerLimit);
                 if (bot.Requote(view) is { } quotes)
-                    Requote(bot, quotes);
+                    Requote(bot, quotes, observeTrade);
             }
             if (_timeMs % 1_000 == 0)
             {
@@ -65,14 +68,14 @@ internal sealed class MarketSimulation
                 _previousClose = _lastPrice;
             }
         }
-        return (new(_viEnabled, _series.AsReadOnly(), _viEvents.AsReadOnly(), _minPrice, _maxPrice),
+        return (new(_viEnabled, _series.AsReadOnly(), _viEvents.AsReadOnly(), _minPrice, _maxPrice, _minAtMs ?? 0, _maxAtMs ?? 0),
             new(_viEnabled, new ReadOnlyDictionary<RejectReason, long>(_rejections)));
     }
 
-    private void Requote(Bot bot, IReadOnlyList<Quote> quotes)
+    private void Requote(Bot bot, IReadOnlyList<Quote> quotes, Action<Trade, long>? observeTrade)
     {
         foreach (var id in bot.LiveOrders.ToArray())
-            Process(new CancelOrder(id, ++_sequence, _timeMs));
+            Process(new CancelOrder(id, ++_sequence, _timeMs), observeTrade);
         foreach (var quote in quotes)
         {
             var sequence = ++_sequence;
@@ -81,14 +84,16 @@ internal sealed class MarketSimulation
             // Track incoming ownership before Process: immediate fills can refer to this ID.
             _owners.Add(id, bot);
             bot.LiveOrders.Add(id);
-            Process(new PlaceLimitOrder(id, quote.Side, price, quote.Quantity, bot.Name, sequence, _timeMs));
+            Process(new PlaceLimitOrder(id, quote.Side, price, quote.Quantity, bot.Name, sequence, _timeMs), observeTrade);
         }
     }
 
-    private void Process(OrderCommand command)
+    private void Process(OrderCommand command, Action<Trade, long>? observeTrade)
     {
         long? auctionPrice = null;
-        foreach (var engineEvent in _engine.Process(command))
+        long? auctionAtMs = null;
+        var events = _engine.Process(command);
+        foreach (var engineEvent in events)
         {
             switch (engineEvent)
             {
@@ -96,8 +101,15 @@ internal sealed class MarketSimulation
                     _owners[trade.BuyOrderId].Inventory += trade.Quantity;
                     _owners[trade.SellOrderId].Inventory -= trade.Quantity;
                     _lastPrice = trade.Price;
-                    _minPrice = Math.Min(_minPrice, trade.Price);
-                    _maxPrice = Math.Max(_maxPrice, trade.Price);
+                    // AuctionCompleted follows the auction trades and carries the exact end,
+                    // which may precede the simulation tick that closes the auction.
+                    var atMs = trade.HasAggressor ? command.LogicalTimeMs
+                        : (auctionAtMs ??= events.OfType<AuctionCompleted>().Single().AtMs);
+                    if (trade.Price < _minPrice || (trade.Price == _minPrice && _minAtMs is null))
+                        (_minPrice, _minAtMs) = (trade.Price, atMs);
+                    if (trade.Price > _maxPrice || (trade.Price == _maxPrice && _maxAtMs is null))
+                        (_maxPrice, _maxAtMs) = (trade.Price, atMs);
+                    observeTrade?.Invoke(trade, atMs);
                     break;
                 case OrderFilled filled:
                     ForgetOrder(filled.OrderId);
