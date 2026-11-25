@@ -149,9 +149,12 @@ export class MockMarketSource implements MarketSource {
         `${vi ? '단일가 대기 중. ' : ''}같은 가격 대기열 ${queueAhead.orders + 1}번째, 앞에 ${formatQuantity(queueAhead.quantity)}가 있습니다.` }
   }
   async getExperiment(id: string) {
-    if (id !== EXPERIMENT_ID) return null
+    // CONTRACT v0.3의 시연 시드. 기존 목 전용 ID는 호환용으로 유지한다.
+    const seed = id === 'demo' || id === 'exp-FatFinger-16' ? 16 : this.seed
+    if (id === 'demo') id = 'exp-FatFinger-16'
+    if (id !== EXPERIMENT_ID && id !== 'exp-FatFinger-16') return null
     const runs = [true, false].map((viEnabled): ExperimentRun => {
-      const market = new MockMarketSource(this.seed, this.speed, viEnabled)
+      const market = new MockMarketSource(seed, this.speed, viEnabled)
       const viEvents: ViEvent[] = []
       const series: ExperimentRun['series'] = []
       market.listeners.add((message) => {
@@ -163,7 +166,7 @@ export class MockMarketSource implements MarketSource {
       const prices = series.map(({ price }) => price)
       return { viEnabled, viEvents, series, minPrice: Math.min(...prices), maxPrice: Math.max(...prices) }
     })
-    return { id, seed: this.seed, scenario: 'FatFinger' as const, runs }
+    return { id, seed, scenario: 'FatFinger' as const, runs }
   }
   async crash() {
     this.replaying = true

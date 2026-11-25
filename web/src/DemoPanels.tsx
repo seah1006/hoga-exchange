@@ -11,7 +11,7 @@ export function Comparison({ source }: { source: MarketSource }) {
   useEffect(() => {
     let active = true
     setData(undefined); setError('')
-    void source.getExperiment('exp-1').then((value) => { if (active) setData(value) })
+    void source.getExperiment('demo').then((value) => { if (active) setData(value) })
       .catch((cause: unknown) => { if (active) setError(marketErrorMessage(cause)) })
     return () => { active = false }
   }, [source])

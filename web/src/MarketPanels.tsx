@@ -31,10 +31,10 @@ export function OrderBook({ book, onPrice }: { book: BookSnapshot; onPrice: (pri
 }
 
 export function TradeList({ trades }: { trades: Trade[] }) {
-  return <section className="panel"><h2>최근 체결</h2>
+  return <section className="panel"><h2 id="recent-trades">최근 체결</h2><div className="trade-scroll" role="region" aria-labelledby="recent-trades" tabIndex={0}>
     <table><thead><tr><th>시각</th><th>가격</th><th>수량</th><th>구분</th></tr></thead><tbody>
-      {trades.slice(0, 6).map((trade) => <tr key={trade.seq}><td>{formatTime(trade.logicalTimeMs)}</td><td>{formatPrice(trade.price)}</td><td>{formatQuantity(trade.quantity)}</td><td className={trade.aggressorSide === 'Buy' ? 'buy' : trade.aggressorSide === 'Sell' ? 'sell' : ''}>{trade.aggressorSide === 'Buy' ? '매수' : trade.aggressorSide === 'Sell' ? '매도' : '단일가'}</td></tr>)}
+      {trades.map((trade) => <tr key={trade.seq}><td>{formatTime(trade.logicalTimeMs)}</td><td>{formatPrice(trade.price)}</td><td>{formatQuantity(trade.quantity)}</td><td className={trade.aggressorSide === 'Buy' ? 'buy' : trade.aggressorSide === 'Sell' ? 'sell' : ''}>{trade.aggressorSide === 'Buy' ? '매수' : trade.aggressorSide === 'Sell' ? '매도' : '단일가'}</td></tr>)}
       {!trades.length && <tr><td colSpan={4}>첫 체결 대기 중</td></tr>}
-    </tbody></table>
+    </tbody></table></div>
   </section>
 }

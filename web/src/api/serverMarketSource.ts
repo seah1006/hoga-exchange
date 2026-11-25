@@ -10,6 +10,7 @@ const events = ['bookSnapshot', 'trade', 'candle', 'viEvent'] as const
 export interface MarketHub {
   on<K extends keyof Messages>(name: K, handler: (data: Messages[K]) => void): void
   onreconnecting(handler: () => void): void
+  onreconnected(handler: () => void): void
   onclose(handler: () => void): void
   start(): Promise<void>
   stop(): Promise<void>
@@ -85,20 +86,25 @@ export class ServerMarketSource implements MarketSource {
         if (isCurrent()) start()
       }, restartDelayMs)
     }
+    const beginSync = () => {
+      if (isCurrent() && (this.status === 'connecting' || this.status === 'reconnecting')) this.setStatus('syncing')
+    }
     const start = () => {
       this.setStatus('connecting')
-      void hub.start().catch(retry)
+      void hub.start().then(beginSync, retry)
     }
     for (const name of events) {
       hub.on(name, (data) => {
         if (!isCurrent()) return
-        // TASK-004가 매 새 연결에 전송하는 최초 스냅샷까지 기다린다.
-        if (name === 'bookSnapshot') this.setStatus('connected')
+        // 이력은 start/onreconnected 알림보다 먼저 도착할 수 있다.
+        beginSync()
         const message = { type: name, data } as MarketMessage
         for (const handler of this.listeners) handler(message)
+        if (isCurrent() && name === 'bookSnapshot') this.setStatus('connected')
       })
     }
     hub.onreconnecting(() => { if (isCurrent()) this.setStatus('reconnecting') })
+    hub.onreconnected(beginSync)
     hub.onclose(retry)
     start()
   }

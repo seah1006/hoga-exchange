@@ -119,3 +119,10 @@ test('주문·시세를 저널에서 복구하고 첫 새 이벤트에서 복구
   market.advance()
   expect(await market.getStateHash()).toMatchObject({ restoredFromJournal: false })
 })
+
+test('목 demo는 시장 시드와 무관하게 시연 시드 16의 실제 ID로 응답한다', async () => {
+  const demo = await new MockMarketSource(42).getExperiment('demo')
+  expect(demo).toMatchObject({ id: 'exp-FatFinger-16', seed: 16, scenario: 'FatFinger' })
+  expect(demo).toEqual(await new MockMarketSource(43).getExperiment('exp-FatFinger-16'))
+  expect(demo?.runs.map(({ viEnabled }) => viEnabled)).toEqual([true, false])
+})
