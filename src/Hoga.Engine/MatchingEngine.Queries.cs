@@ -34,7 +34,7 @@ public sealed partial class MatchingEngine
         Phase == TradingPhase.CallAuction ? OrderStatus.WaitingAuction : OrderStatus.Resting;
 
     public IndicativeAuction? GetIndicativeAuction() =>
-        Phase == TradingPhase.CallAuction ? CalculateAuction() : null;
+        Phase == TradingPhase.CallAuction ? CalculateAuction(out _) : null;
 
     public string ComputeStateHash()
     {

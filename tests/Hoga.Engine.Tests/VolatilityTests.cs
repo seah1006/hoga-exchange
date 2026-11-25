@@ -162,17 +162,20 @@ public sealed class VolatilityTests
 
     [Fact]
     [Trait("Rule", "R-AUCT-08")]
-    public void Empty_tick_at_reference_clears_strictly_better_orders()
+    [Trait("Rule", "R-AUCT-02a")]
+    public void Occupied_price_exception_clears_strictly_better_orders_without_grid_fallback()
     {
         var s = new Session();
         s.Place("low-bid", Side.Buy, 9400);
         s.Place("low-ask", Side.Sell, 9400);
         s.Place("high-bid", Side.Buy, 12380);
         s.Place("high-ask", Side.Sell, 11760, 19);
-        Assert.Equal(new IndicativeAuction(10000, 1), s.Engine.GetIndicativeAuction());
+        Assert.Equal(new IndicativeAuction(11760, 1), s.Engine.GetIndicativeAuction());
         var trade = Assert.Single(s.Advance(150000).OfType<Trade>());
         Assert.Equal("high-bid", trade.BuyOrderId);
         Assert.Equal("low-ask", trade.SellOrderId);
+        Assert.Equal(11760, trade.Price);
+        Assert.Equal(0, s.Engine.AuctionGridFallbackCount);
         var book = s.Engine.GetBook(1);
         Assert.True(book.Bids[0].Price < book.Asks[0].Price);
     }

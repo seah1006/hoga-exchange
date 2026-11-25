@@ -27,7 +27,7 @@ public sealed class AuctionPriceTests
     }
 
     [Theory]
-    [InlineData(9990, 10010, 10000, 10000)]
+    [InlineData(9990, 10010, 10000, 10010)]
     [InlineData(11000, 11010, 10000, 11000)]
     [InlineData(9000, 9010, 10000, 9010)]
     [Trait("Rule", "R-AUCT-05")]
@@ -35,6 +35,15 @@ public sealed class AuctionPriceTests
     {
         Assert.Equal(new IndicativeAuction(expected, 5), MatchingEngine.FindAuction(
             [new(bid, 5, 1)], [new(ask, 5, 1)], previous, new TickSizeTable()));
+    }
+
+    [Fact]
+    [Trait("Rule", "R-AUCT-05")]
+    [Trait("Rule", "R-AUCT-08")]
+    public void One_share_at_each_occupied_price_selects_upper_candidate_over_empty_reference()
+    {
+        Assert.Equal(new IndicativeAuction(10010, 1), MatchingEngine.FindAuction(
+            [new(10010, 1, 1)], [new(9990, 1, 1)], 10000, new TickSizeTable()));
     }
 
     [Theory]
@@ -52,12 +61,15 @@ public sealed class AuctionPriceTests
     }
 
     [Theory]
-    [InlineData(9300, 9410)]
-    [InlineData(10000, 10000)]
-    [InlineData(10001, 10010)]
-    [InlineData(11800, 11750)]
+    [InlineData(9300, 9400)]
+    [InlineData(9400, 9400)]
+    [InlineData(10000, 11760)]
+    [InlineData(10001, 11760)]
+    [InlineData(11760, 11760)]
+    [InlineData(11800, 11760)]
     [Trait("Rule", "R-AUCT-08")]
-    public void Empty_tick_prices_prevent_crossed_release_in_regression_book(long previous, long expected)
+    [Trait("Rule", "R-AUCT-02a")]
+    public void Occupied_prices_in_exception_take_priority_over_empty_ticks(long previous, long expected)
     {
         Assert.Equal(new IndicativeAuction(expected, 1), MatchingEngine.FindAuction(
             [new(12380, 1, 1), new(9400, 1, 1)], [new(9400, 1, 1), new(11760, 19, 1)],
@@ -71,7 +83,10 @@ public sealed class AuctionPriceTests
     [Trait("Rule", "R-AUCT-08")]
     public void Grid_uses_the_tick_of_each_price_band(long previous, long expected)
     {
-        Assert.Equal(new IndicativeAuction(expected, 1), MatchingEngine.FindAuction(
-            [new(2010, 1, 1)], [new(1998, 1, 1)], previous, new TickSizeTable()));
+        var rule = new TickSizeTable();
+        BookLevel[] bids = [new(2010, 1, 1)];
+        BookLevel[] asks = [new(1998, 1, 1)];
+        Assert.Equal(new IndicativeAuction(expected, 1), MatchingEngine.FindAuctionOnGrid(bids, asks, previous, rule));
+        Assert.Equal(new IndicativeAuction(2010, 1), MatchingEngine.FindAuction(bids, asks, previous, rule));
     }
 }

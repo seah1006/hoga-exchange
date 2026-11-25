@@ -42,7 +42,9 @@ public sealed partial class MatchingEngine
 
     private void CompleteAuction(long sequence, List<EngineEvent> events)
     {
-        var match = CalculateAuction();
+        var match = CalculateAuction(out var usedGridFallback);
+        if (usedGridFallback)
+            AuctionGridFallbackCount++;
         if (match is null)
         {
             events.Add(new AuctionNoMatch(_actualEndMs)); // R-AUCT-07: no extension
