@@ -39,4 +39,6 @@
 
 - 1단계 (항목 1): SHA-256에 마지막 순번, 가격 설정, 버전 포함 호가단위 규칙 ID, Ordinal 정렬 접수 ID 이력을 추가했다. 동일 상태/상이한 이력의 다음 명령 반응을 검증했다. 거부도 순번을 소비하므로 기존 거부 테스트와 I6는 전체 해시 변경과 동일 순번 대조군의 해시 일치를 함께 검증한다. 빈 상태의 고정 해시도 새 바이트 형식으로 다시 산출했다.
 - 검증: `dotnet build HogaExchange.slnx -warnaserror` 경고 0 / 오류 0, `dotnet test HogaExchange.slnx` 44건 통과.
-- 다음: 항목 2~5. 막힌 것 없음.
+- 2단계 (항목 2~3): 1원 미만 호가를 `InvalidPrice`(R-LIMIT-05), 빈/공백 ID의 접수·취소를 `InvalidOrderId`로 거부한다. 판정 우선순위를 코드 주석에, 새 거부 사유와 가격 규칙을 문서·테스트에 반영했다.
+- 검증: `dotnet build HogaExchange.slnx -warnaserror` 경고 0 / 오류 0, `dotnet test HogaExchange.slnx` 48건 통과.
+- 다음: 항목 4~5. 막힌 것 없음.

@@ -71,6 +71,35 @@ public class MatchingTests
         Assert.Equal(new OrderAccepted("bad"), Assert.Single(engine.Process(Order(2, "bad", Side.Buy, 10_000, 1))));
     }
 
+    [Theory]
+    [Trait("Rule", "R-LIMIT-05")]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Rejects_price_below_one_even_at_zero_lower_limit(long price)
+    {
+        var engine = new MatchingEngine(1, new TickSizeTable());
+        Assert.Equal(0, engine.LowerLimit);
+        var order = Order(1, "minimum", Side.Buy, price, 1);
+        Assert.Equal(new OrderRejected(order.OrderId, RejectReason.InvalidPrice, "R-LIMIT-05"),
+            Assert.Single(engine.Process(order)));
+        Assert.Empty(engine.GetBook(1).Bids);
+        Assert.Equal(new OrderAccepted(order.OrderId),
+            Assert.Single(engine.Process(order with { Sequence = 2, Price = 1 })));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" \t\r\n")]
+    public void Rejects_blank_ids_for_placement_and_cancellation(string id)
+    {
+        var engine = NewEngine();
+        var rejected = new OrderRejected(id, RejectReason.InvalidOrderId, null);
+        Assert.Equal(rejected, Assert.Single(engine.Process(Order(1, id, Side.Sell, 10_000, 1))));
+        Assert.Equal(rejected, Assert.Single(engine.Process(Order(2, id, Side.Sell, 0, 0))));
+        Assert.Equal(rejected, Assert.Single(engine.Process(new CancelOrder(id, 3, 0))));
+        Assert.Empty(engine.GetBook(1).Asks);
+    }
+
     [Fact]
     [Trait("Rule", "R-LIMIT-04")]
     public void Accepts_orders_at_both_limits()

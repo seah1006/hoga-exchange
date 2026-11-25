@@ -44,10 +44,17 @@ public sealed partial class MatchingEngine
     {
         if (order.Side is not (Side.Buy or Side.Sell))
             throw new ArgumentOutOfRangeException(nameof(order), "Unknown side.");
+        // After command/sequence and side checks: ID, quantity, duplicate ID, minimum price,
+        // upper/lower limits, then tick alignment.
+        if (string.IsNullOrWhiteSpace(order.OrderId))
+            return [new OrderRejected(order.OrderId, RejectReason.InvalidOrderId, null)];
         if (order.Quantity <= 0)
             return [new OrderRejected(order.OrderId, RejectReason.InvalidQuantity, null)];
         if (_acceptedIds.Contains(order.OrderId))
             return [new OrderRejected(order.OrderId, RejectReason.DuplicateOrderId, null)];
+        // R-LIMIT-05: the calculated lower limit can be 0 when the base price is 1.
+        if (order.Price < 1)
+            return [new OrderRejected(order.OrderId, RejectReason.InvalidPrice, "R-LIMIT-05")];
         // R-LIMIT-04: the limits themselves are inclusive.
         if (order.Price > UpperLimit)
             return [new OrderRejected(order.OrderId, RejectReason.AboveUpperLimit, "R-LIMIT-04")];
@@ -99,6 +106,9 @@ public sealed partial class MatchingEngine
 
     private IReadOnlyList<EngineEvent> Cancel(CancelOrder command)
     {
+        // Check ID before looking up the cancellation target.
+        if (string.IsNullOrWhiteSpace(command.OrderId))
+            return [new OrderRejected(command.OrderId, RejectReason.InvalidOrderId, null)];
         if (!_active.TryGetValue(command.OrderId, out var node))
             return [new OrderRejected(command.OrderId, RejectReason.UnknownOrder, null)];
         Remove(node);

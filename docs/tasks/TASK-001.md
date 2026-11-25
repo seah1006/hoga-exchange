@@ -37,7 +37,9 @@
 - 거부 사유(`Reason`)와 규칙 ID:
   | Reason | RuleId |
   |---|---|
+  | `InvalidOrderId` (빈 문자열 또는 공백뿐인 주문 ID, 접수·취소 공통) | - |
   | `InvalidQuantity` (0 이하) | - |
+  | `InvalidPrice` (1원 미만) | R-LIMIT-05 |
   | `OffTick` | R-TICK-02 |
   | `AboveUpperLimit` | R-LIMIT-04 |
   | `BelowLowerLimit` | R-LIMIT-04 |

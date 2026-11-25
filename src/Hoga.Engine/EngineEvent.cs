@@ -8,6 +8,8 @@ public enum RejectReason
     BelowLowerLimit,
     DuplicateOrderId,
     UnknownOrder,
+    InvalidPrice,
+    InvalidOrderId,
 }
 
 public abstract record EngineEvent;

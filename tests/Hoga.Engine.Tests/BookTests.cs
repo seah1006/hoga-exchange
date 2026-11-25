@@ -117,7 +117,8 @@ public class BookTests
     [Fact]
     [Trait("Rule", "R-LIMIT-04")]
     [Trait("Rule", "R-TICK-02")]
-    public void All_six_reject_reasons_only_advance_the_sequence()
+    [Trait("Rule", "R-LIMIT-05")]
+    public void All_reject_reasons_only_advance_the_sequence()
     {
         var engine = new MatchingEngine(9_940, new TickSizeTable());
         var existing = new PlaceLimitOrder("existing", Side.Buy, 9_990, 6, "a", 1, 0);
@@ -132,6 +133,9 @@ public class BookTests
             (existing with { OrderId = "lower", Sequence = 5, Price = 6_950 }, RejectReason.BelowLowerLimit),
             (existing with { Sequence = 6 }, RejectReason.DuplicateOrderId),
             (new CancelOrder("unknown", 7, 0), RejectReason.UnknownOrder),
+            (existing with { OrderId = "invalid-price", Sequence = 8, Price = 0 }, RejectReason.InvalidPrice),
+            (existing with { OrderId = "", Sequence = 9 }, RejectReason.InvalidOrderId),
+            (new CancelOrder(" ", 10, 0), RejectReason.InvalidOrderId),
         };
         foreach (var (command, reason) in rejected)
         {
