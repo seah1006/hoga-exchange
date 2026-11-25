@@ -1,0 +1,141 @@
+{
+  "bookSnapshot": {
+    "symbol": "HOGA",
+    "seq": 1024,
+    "logicalTimeMs": 3600000,
+    "phase": "Continuous",
+    "basePrice": 9940,
+    "upperLimit": 12920,
+    "lowerLimit": 6960,
+    "lastPrice": 10050,
+    "asks": [
+      {
+        "price": 10060,
+        "quantity": 1200,
+        "orderCount": 3
+      }
+    ],
+    "bids": [
+      {
+        "price": 10050,
+        "quantity": 800,
+        "orderCount": 2
+      }
+    ],
+    "vi": null
+  },
+  "vi": {
+    "kind": "Dynamic",
+    "referencePrice": 10000,
+    "triggerPrice": 10600,
+    "startMs": 3600000,
+    "scheduledEndMs": 3720000,
+    "ruleId": "R-VI-01"
+  },
+  "trade": {
+    "symbol": "HOGA",
+    "seq": 1025,
+    "logicalTimeMs": 3600500,
+    "price": 10050,
+    "quantity": 300,
+    "aggressorSide": "Buy"
+  },
+  "candle": {
+    "symbol": "HOGA",
+    "startMs": 3600000,
+    "open": 10000,
+    "high": 10100,
+    "low": 9990,
+    "close": 10050,
+    "volume": 15400
+  },
+  "viEvent": {
+    "type": "Triggered",
+    "kind": "Dynamic",
+    "referencePrice": 10000,
+    "triggerPrice": 10600,
+    "atMs": 3600000,
+    "ruleId": "R-VI-01"
+  },
+  "explanation": {
+    "orderId": "o-123",
+    "status": "Resting",
+    "side": "Buy",
+    "price": 10050,
+    "remainingQuantity": 100,
+    "queueAhead": {
+      "orders": 7,
+      "quantity": 3200
+    },
+    "reason": null,
+    "ruleId": null,
+    "message": "같은 가격 대기열 8번째, 앞에 3,200주가 있습니다."
+  },
+  "experiment": {
+    "id": "exp-1",
+    "seed": 42,
+    "scenario": "FatFinger",
+    "runs": [
+      {
+        "viEnabled": true,
+        "series": [
+          {
+            "timeMs": 0,
+            "price": 10000
+          }
+        ],
+        "viEvents": [
+          {
+            "type": "Triggered",
+            "kind": "Dynamic",
+            "atMs": 61000,
+            "referencePrice": 10000,
+            "triggerPrice": 9400,
+            "ruleId": "R-VI-01"
+          }
+        ],
+        "minPrice": 9400,
+        "maxPrice": 10100
+      },
+      {
+        "viEnabled": false,
+        "series": [
+          {
+            "timeMs": 0,
+            "price": 10000
+          }
+        ],
+        "viEvents": [],
+        "minPrice": 7200,
+        "maxPrice": 10100
+      }
+    ]
+  },
+  "order": {
+    "price": 10050,
+    "side": "Buy",
+    "quantity": 100
+  },
+  "accepted": {
+    "reason": null,
+    "orderId": "o-123",
+    "ruleId": null,
+    "accepted": true
+  },
+  "rejected": {
+    "reason": "AboveUpperLimit",
+    "orderId": null,
+    "ruleId": "R-LIMIT-04",
+    "accepted": false
+  },
+  "cancelled": {
+    "cancelled": true,
+    "reason": null,
+    "orderId": "o-123"
+  },
+  "stateHash": {
+    "restoredFromJournal": true,
+    "seq": 1024,
+    "stateHash": "ab12..."
+  }
+}
