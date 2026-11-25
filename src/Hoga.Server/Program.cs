@@ -14,6 +14,7 @@ builder.Services.AddOptions<MarketOptions>().BindConfiguration("Market")
         o.MaxOrderQuantity is >= 1 and <= 1_000_000_000 && !string.IsNullOrWhiteSpace(o.JournalPath), "시장 설정이 올바르지 않습니다.").ValidateOnStart();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSignalR();
+builder.Services.AddSingleton(new ExperimentSummaryFile(Path.Combine(AppContext.BaseDirectory, "summary.json")));
 builder.Services.AddSingleton(services => new ExperimentCache(
     TimeSpan.FromMilliseconds(services.GetRequiredService<IOptions<MarketOptions>>().Value.RequestTimeoutMs),
     (seed, scenario) => ExperimentRunner.RunExperiment(seed, scenario).Experiment));
@@ -62,6 +63,17 @@ app.MapGet("/api/orders/{id}/explanation", async (string id, MarketLoop market, 
         ? Error(404, "NotFound", "기록 보관 기간이 지났습니다") : MissingOrder();
 });
 app.MapGet("/api/state/hash", async (MarketLoop market, CancellationToken abort) => Results.Ok(await market.Hash(abort)));
+app.MapGet("/api/experiments/summary", (ExperimentSummaryFile summary) =>
+{
+    try
+    {
+        return Results.Stream(File.OpenRead(summary.Path), "application/json; charset=utf-8");
+    }
+    catch (IOException failure) when (failure is FileNotFoundException or DirectoryNotFoundException)
+    {
+        return Error(503, "ServiceUnavailable", "실험 요약 파일을 사용할 수 없습니다.");
+    }
+});
 app.MapGet("/api/experiments/{id}", async (string id, ExperimentCache experiments, CancellationToken abort) =>
 {
     try
@@ -111,6 +123,7 @@ static bool IsAdmin(HttpContext context, IConfiguration configuration)
             SHA256.HashData(Encoding.UTF8.GetBytes(key)), SHA256.HashData(Encoding.UTF8.GetBytes(headers[0]!)));
 }
 
+internal sealed record ExperimentSummaryFile(string Path);
 internal sealed record ScenarioRequest(string? Name);
 internal sealed record PlaceRequest(string? Side,
     [property: JsonNumberHandling(JsonNumberHandling.Strict)] long? Price,
