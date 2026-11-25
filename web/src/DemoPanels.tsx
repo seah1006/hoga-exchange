@@ -36,7 +36,7 @@ export function Admin({ source, server, bookSeq, onReturn }: { source: MarketSou
     try { await action() } catch (cause) { setError(marketErrorMessage(cause)) }
   }
   return <section className="panel admin"><h2>관리자 패널</h2><div className="row">
-    {server && <AdminKeyField />}
+    {server && <details><summary>운영용 관리자 키</summary><AdminKeyField /></details>}
     {(Object.keys(names) as Scenario[]).map((name) => <button key={name} onClick={() => void perform(() => run(name))}>{names[name]}</button>)}
     <button onClick={() => void perform(restore)}>서버 강제 종료</button>
     <button onClick={() => void perform(async () => { setBeforeHash(undefined); setHash(await source.getStateHash()) })}>상태 해시 조회</button>
@@ -47,3 +47,4 @@ export function Admin({ source, server, bookSeq, onReturn }: { source: MarketSou
       {justRestored && beforeHash && <span> · 복구 전 <code>{beforeHash}</code> / {beforeHash === hash.stateHash ? '일치' : '불일치'}</span>}</p>}
   </div></section>
 }
+
