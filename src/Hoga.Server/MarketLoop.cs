@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Globalization;
+using Hoga.Server.Operations;
 using System.Threading.Channels;
 using Hoga.Engine;
 using Hoga.Bots;
@@ -31,7 +33,8 @@ internal sealed class MarketUnavailableException(Exception? inner = null)
 
 internal sealed class MarketLoop(
     IOptions<MarketOptions> configuration, IWebHostEnvironment environment, TimeProvider time,
-    IHubContext<MarketHub> hub, ILogger<MarketLoop> logger) : BackgroundService
+    IHubContext<MarketHub> hub, ILogger<MarketLoop> logger, MarketMetrics metrics,
+    IRoundBackupTrigger backup) : BackgroundService
 {
     private static readonly TimeSpan Cadence = TimeSpan.FromMilliseconds(100);
     private readonly Channel<IRequest> _requests = Channel.CreateBounded<IRequest>(new BoundedChannelOptions(1024)
@@ -134,7 +137,7 @@ internal sealed class MarketLoop(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Market subscription delivery failed");
+            logger.LogWarning("Market subscription delivery failed ({FailureType})", ex.GetType().Name);
             return false;
         }
     }, ct, readOnly: true);
@@ -169,6 +172,7 @@ internal sealed class MarketLoop(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _stopping = stoppingToken;
+        metrics.ObserveQueue(() => _requests.Reader.Count);
         try
         {
             _path = Path.GetFullPath(configuration.Value.JournalPath, environment.ContentRootPath);
@@ -270,7 +274,7 @@ internal sealed class MarketLoop(
             try { File.Move(_path, archive); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                logger.LogWarning(ex, "Market reset cancelled: could not archive the current journal");
+                logger.LogWarning("Market reset cancelled: could not archive the current journal ({FailureType})", ex.GetType().Name);
                 _writer = JournalWriter.OpenExisting(_path, _header);
                 if (_writer.LastSequence != _seq)
                     throw new InvalidDataException("Journal sequence changed during failed rotation.");
@@ -288,7 +292,7 @@ internal sealed class MarketLoop(
             {
                 try { File.Delete(old); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                { logger.LogWarning(ex, "Could not prune old market journal"); }
+                { logger.LogWarning("Could not prune old market journal ({FailureType})", ex.GetType().Name); }
             }
         }
         finally { _expiredRead.Release(); }
@@ -321,7 +325,11 @@ internal sealed class MarketLoop(
     {
         if (_nextDailyReset is { } due && time.GetUtcNow() is var now && now >= due)
         {
-            if (await ResetMarket("Daily", now)) ScheduleDailyReset(now);
+            if (await ResetMarket("Daily", now))
+            {
+                backup.AfterDailyReset(time.GetUtcNow());
+                ScheduleDailyReset(now);
+            }
             else _nextDailyReset = now.AddMinutes(5); // 임의 지정: avoid hammering a failing filesystem.
         }
         // Continuous matching does not require periodic input. Avoid idle writes and sequence/hash churn.
@@ -338,7 +346,7 @@ internal sealed class MarketLoop(
         var attempts = _journalAttempts;
         try { await RunBotTicks(); }
         catch (Exception ex) when (_journalAttempts == attempts && !_stopping.IsCancellationRequested)
-        { logger.LogWarning(ex, "Discarding bot batch that did not reach the journal"); }
+        { logger.LogWarning("Discarding bot batch that did not reach the journal ({FailureType})", ex.GetType().Name); }
     }
 
     private async Task RunBotTicks()
@@ -364,8 +372,13 @@ internal sealed class MarketLoop(
     private async Task<IReadOnlyList<EngineEvent>> Process(OrderCommand command)
     {
         _journalAttempts++; // An I/O error may follow a partial write, so never suppress append failures.
+        var phaseStarted = Stopwatch.GetTimestamp();
         _writer!.Append(command);
+        metrics.JournalElapsed(phaseStarted);
+        phaseStarted = Stopwatch.GetTimestamp();
         var events = _engine.Process(command);
+        metrics.EngineElapsed(phaseStarted);
+        metrics.Observe(command, events);
         _seq = command.Sequence;
         _bots?.Observe(command, events);
         var messages = _projection.Apply(command, events, publish: true);
@@ -390,7 +403,7 @@ internal sealed class MarketLoop(
         send.CancelAfter(TimeSpan.FromSeconds(1));
         try { await hub.Clients.Group(MarketHub.Group).SendAsync(name, payload, send.Token); }
         catch (Exception ex)
-        { logger.LogWarning(ex, "Market signal {Event} delivery failed", name); }
+        { logger.LogWarning("Market signal {Event} delivery failed ({FailureType})", name, ex.GetType().Name); }
     }
 
     private interface IRequest

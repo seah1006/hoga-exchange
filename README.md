@@ -1,5 +1,7 @@
 # hoga-exchange
 
+[![CI](https://github.com/seah1006/hoga-exchange/actions/workflows/ci.yml/badge.svg)](https://github.com/seah1006/hoga-exchange/actions/workflows/ci.yml)
+
 한국거래소(KRX) 매매 규정을 조항 단위로 구현한 C# 모의 거래소입니다.
 같은 시장을 **VI(변동성완화장치)를 켜고 / 끄고** 두 번 돌려, 제도가 가격 급변을 어떻게 막는지 나란히 보여 줍니다.
 

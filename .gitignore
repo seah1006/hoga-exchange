@@ -16,6 +16,10 @@ dist/
 .env.*
 !.env.example
 data/journal/
+data/backups/
+data/keys/
+data/*.db
+data/*.db-*
 *.log
 
 # IDE

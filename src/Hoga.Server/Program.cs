@@ -1,17 +1,18 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Hoga.Bots;
 using Hoga.Engine;
 using Hoga.Server;
+using Hoga.Server.Operations;
+using static Hoga.Server.Operations.OperationsRegistration;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddOperations();
 builder.Services.AddOptions<MarketOptions>().BindConfiguration("Market")
     .Validate(o => o.Speed is >= 1 and <= 1000 && o.RequestTimeoutMs > 0 && o.BasePrice > 0 &&
         o.BotIntensity is >= 0 and <= 1 && (string.IsNullOrEmpty(o.DailyResetLocalTime) ||
@@ -49,9 +50,12 @@ builder.Services.AddSingleton(services => new ExperimentCache(
 builder.Services.AddSingleton<MarketLoop>();
 builder.Services.AddHostedService(services => services.GetRequiredService<MarketLoop>());
 var app = builder.Build();
+app.CaptureMetricsPeer();
 app.UseWhen(context => context.Connection.RemoteIpAddress is not null, branch => branch.UseForwardedHeaders());
 app.UseRouting();
+app.UseMiddleware<SafeRequestLog>();
 app.UseRateLimiter();
+app.MapOperations();
 
 app.Use(async (context, next) =>
 {
@@ -184,13 +188,6 @@ static IResult Error(int status, string error, string message) => Results.Json(n
 static IResult MissingOrder() => Error(404, "NotFound", "주문을 찾을 수 없습니다.");
 
 static IResult Unauthorized() => Error(401, "Unauthorized", "유효한 관리자 키가 필요합니다.");
-static bool IsAdmin(HttpContext context, IConfiguration configuration)
-{
-    var key = configuration["Market:AdminKey"];
-    return !string.IsNullOrWhiteSpace(key) && context.Request.Headers.TryGetValue("X-Admin-Key", out var headers) &&
-        headers.Count == 1 && CryptographicOperations.FixedTimeEquals(
-            SHA256.HashData(Encoding.UTF8.GetBytes(key)), SHA256.HashData(Encoding.UTF8.GetBytes(headers[0]!)));
-}
 
 internal sealed record ExperimentSummaryFile(string Path);
 internal sealed record ScenarioRequest(string? Name);

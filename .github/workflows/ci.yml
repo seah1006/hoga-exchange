@@ -1,0 +1,69 @@
+name: CI
+on: [push, pull_request]
+permissions:
+  contents: read
+
+jobs:
+  dotnet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-dotnet10-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', '**/packages.lock.json', '**/NuGet.Config') }}
+          restore-keys: ${{ runner.os }}-nuget-dotnet10-
+      - run: dotnet build HogaExchange.slnx -warnaserror
+      - name: Run test projects (not benchmarks)
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+          for project in tests/*/*.csproj; do
+            name=$(basename "$project" .csproj)
+            dotnet test "$project" --no-build --logger "trx;LogFileName=$name.trx" --results-directory "$GITHUB_WORKSPACE/TestResults" || status=1
+          done
+          exit "$status"
+      - name: Summarize .NET tests
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          {
+            echo '### .NET tests'
+            files=(TestResults/*.trx)
+            if ((${#files[@]} == 0)); then echo 'No TRX report was generated.'; fi
+            for file in "${files[@]}"; do
+              printf -- '- `%s`: ' "$(basename "$file" .trx)"
+              sed -nE 's/.*<Counters total="([0-9]+)" executed="([0-9]+)" passed="([0-9]+)" failed="([0-9]+)".*/total \1, executed \2, passed \3, failed \4/p' "$file"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24' # Node 24 LTS, 임의 지정; no moving lts/* selector.
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - name: Run web tests
+        run: npm test -- --run --reporter=default --reporter=json --outputFile=vitest-results.json
+      - name: Summarize web tests
+        if: always()
+        run: |
+          {
+            echo '### Web tests'
+            if [[ -f vitest-results.json ]]; then
+              node -e 'const r = require("./vitest-results.json"); console.log(`Total ${r.numTotalTests}, passed ${r.numPassedTests}, failed ${r.numFailedTests}, skipped ${r.numPendingTests}`)'
+            else echo 'No Vitest report was generated.'; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - run: npm run build

@@ -1,0 +1,60 @@
+name: Public uptime
+on:
+  schedule:
+    - cron: '17,47 * * * *' # 30 minutes, off the hour (임의 지정, UTC)
+  workflow_dispatch:
+permissions:
+  issues: write
+concurrency:
+  group: public-uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5 # 임의 지정
+    steps:
+      - name: Check services and update outage issues
+        uses: actions/github-script@v7
+        env:
+          HOGA_HEALTH_URL: ${{ vars.HOGA_HEALTH_URL || 'https://hoga-158-180-72-47.sslip.io/healthz' }}
+          SSS_HEALTH_URL: ${{ vars.SSS_HEALTH_URL || 'https://sss-158-180-72-47.sslip.io/api/health/db' }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const repo = context.repo;
+            const label = 'outage';
+            const run = `${process.env.GITHUB_SERVER_URL}/${repo.owner}/${repo.repo}/actions/runs/${context.runId}`;
+            const targets = [ ['hoga', process.env.HOGA_HEALTH_URL], ['sss', process.env.SSS_HEALTH_URL] ];
+            const results = await Promise.all(targets.map(async ([service, url]) => {
+              try {
+                const target = new URL(url);
+                if (target.protocol !== 'https:' || target.username || target.password) return [service, 'Invalid HTTPS health configuration'];
+                const reply = await fetch(target, { redirect: 'error', signal: AbortSignal.timeout(10000) });
+                await reply.body?.cancel();
+                return [service, reply.ok ? null : `HTTP ${reply.status}`];
+              } catch { return [service, 'Request failed or timed out']; }
+            }));
+            if (results.some(([, failure]) => failure)) {
+              try { await github.rest.issues.getLabel({ ...repo, name: label }); }
+              catch (error) {
+                if (error.status !== 404) throw error;
+                try { await github.rest.issues.createLabel({ ...repo, name: label, color: 'B60205', description: 'Public health check failed' }); }
+                catch (createError) { if (createError.status !== 422) throw createError; }
+              }
+            }
+            const open = await github.paginate(github.rest.issues.listForRepo, { ...repo, state: 'open', labels: label, per_page: 100 });
+            for (const [service, failure] of results) {
+              const marker = `<!-- uptime-monitor:${service} -->`;
+              const incident = open.find(issue => !issue.pull_request && issue.user?.login === 'github-actions[bot]' && issue.body?.includes(marker));
+              if (failure) {
+                const body = `${failure}. [Workflow run](${run})`;
+                if (incident) await github.rest.issues.createComment({ ...repo, issue_number: incident.number, body });
+                else await github.rest.issues.create({ ...repo, title: `[uptime] ${service} health check failed`, body: `${marker}\n${body}`, labels: [label] });
+              } else if (incident) {
+                await github.rest.issues.createComment({ ...repo, issue_number: incident.number, body: `Health check recovered. [Workflow run](${run})` });
+                await github.rest.issues.update({ ...repo, issue_number: incident.number, state: 'closed', state_reason: 'completed' });
+              }
+            }
+            await core.summary.addHeading('Public health').addList(results.map(([service, failure]) => `${service}: ${failure ?? 'OK'}`)).write();
+            if (results.some(([, failure]) => failure)) core.setFailed('One or more public health checks failed.');

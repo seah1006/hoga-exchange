@@ -20,8 +20,11 @@ services:
       Market__BotIntensity: '0.10' # 임의 지정: public workload target ≤3 new orders/s
       Market__DailyResetLocalTime: '05:00' # 임의 지정: Asia/Seoul
       Market__JournalPath: /data/journal/market.jsonl
+      Market__DatabasePath: /data/hoga.db
+      Operations__BackupDirectory: /data/backups
     volumes:
-      - journal:/data/journal
+      - data:/data
+      - journal:/data/journal # 기존 hoga_journal 유지: 명시적 마이그레이션 전까지 가리지 않는다.
     networks: [edge]
     healthcheck:
       test: ['CMD', 'bash', '-ec', 'exec 3<>/dev/tcp/127.0.0.1/8080; printf "GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3; read -r line <&3; [[ "$$line" == HTTP/1.1\ 200\ * ]]']
@@ -30,6 +33,7 @@ services:
       retries: 3
       start_period: 20s
 volumes:
+  data:
   journal:
 networks:
   edge:
