@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Channels;
+using Hoga.Bots;
 using Hoga.Journal;
 using Hoga.Engine;
 using Microsoft.AspNetCore.Hosting;
@@ -219,6 +220,121 @@ public sealed class MarketTests
     }
 
     [Fact]
+    public async Task ExperimentCalculationDoesNotBlockOrders()
+    {
+        using var release = new ManualResetEventSlim();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cache = new ExperimentCache(TimeSpan.FromSeconds(10), (seed, scenario) =>
+        {
+            started.SetResult();
+            if (!release.Wait(TimeSpan.FromSeconds(10))) throw new InvalidOperationException("Experiment was not released.");
+            return FakeExperiment(seed, scenario);
+        });
+        using var factory = new MarketFactory();
+        using var app = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services => services.AddSingleton(cache)));
+        using var client = app.CreateClient();
+        var experiment = Get(client, "/api/experiments/demo");
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var order = await Place(client, "Buy", 10_000, 100).WaitAsync(TimeSpan.FromSeconds(3));
+            Assert.True(order.GetProperty("accepted").GetBoolean());
+            Assert.False(experiment.IsCompleted);
+        }
+        finally { release.Set(); }
+        Assert.Equal("exp-FatFinger-16", (await experiment).GetProperty("id").GetString());
+    }
+
+    [Fact]
+    public async Task ConcurrentExperimentRequestsShareCalculationEvenIfOneCancels()
+    {
+        using var release = new ManualResetEventSlim();
+        using var cancellation = new CancellationTokenSource();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+        var cache = new ExperimentCache(TimeSpan.FromSeconds(10), (seed, scenario) =>
+        {
+            Interlocked.Increment(ref calls);
+            started.TrySetResult();
+            if (!release.Wait(TimeSpan.FromSeconds(10))) throw new InvalidOperationException("Experiment was not released.");
+            return FakeExperiment(seed, scenario);
+        });
+        var abandoned = cache.Get("demo", cancellation.Token);
+        Task<Experiment?> canonical, alias;
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            canonical = cache.Get("exp-FatFinger-16", CancellationToken.None);
+            alias = cache.Get("demo", CancellationToken.None);
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await abandoned);
+            Assert.False(canonical.IsCompleted);
+            Assert.False(alias.IsCompleted);
+        }
+        finally { release.Set(); }
+        var results = await Task.WhenAll(canonical, alias);
+        Assert.NotNull(results[0]);
+        Assert.Same(results[0], results[1]);
+        Assert.Equal(1, Volatile.Read(ref calls));
+    }
+
+    [Fact]
+    public async Task ExperimentReturns503WhenCalculationSlotIsBusy()
+    {
+        using var release = new ManualResetEventSlim();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+        var cache = new ExperimentCache(TimeSpan.FromSeconds(1), (seed, scenario) =>
+        {
+            Interlocked.Increment(ref calls);
+            started.TrySetResult();
+            try
+            {
+                if (!release.Wait(TimeSpan.FromSeconds(10))) throw new InvalidOperationException("Experiment was not released.");
+                return FakeExperiment(seed, scenario);
+            }
+            finally { finished.TrySetResult(); }
+        });
+        using var factory = new MarketFactory();
+        using var app = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services => services.AddSingleton(cache)));
+        using var client = app.CreateClient();
+        var running = cache.Get("demo", CancellationToken.None);
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            using var response = await client.GetAsync("/api/experiments/exp-Calm-1").WaitAsync(TimeSpan.FromSeconds(5));
+            await AssertError(response, HttpStatusCode.ServiceUnavailable, "ServiceUnavailable");
+            Assert.Equal(1, Volatile.Read(ref calls));
+            await Assert.ThrowsAsync<TimeoutException>(async () => await running);
+        }
+        finally { release.Set(); }
+        await finished.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task ExperimentCacheKeepsEightResultsInInsertionOrder()
+    {
+        var calls = 0;
+        var cache = new ExperimentCache(TimeSpan.FromSeconds(5), (seed, scenario) =>
+        {
+            Interlocked.Increment(ref calls);
+            return FakeExperiment(seed, scenario);
+        });
+        for (var seed = 1; seed <= ExperimentCache.Capacity; seed++)
+            await cache.Get($"exp-Calm-{seed}", CancellationToken.None);
+        await cache.Get("exp-Calm-1", CancellationToken.None);
+        Assert.Equal(ExperimentCache.Capacity, Volatile.Read(ref calls));
+        await cache.Get($"exp-Calm-{ExperimentCache.Capacity + 1}", CancellationToken.None);
+        await cache.Get("exp-Calm-2", CancellationToken.None);
+        Assert.Equal(ExperimentCache.Capacity + 1, Volatile.Read(ref calls));
+        await cache.Get("exp-Calm-1", CancellationToken.None);
+        Assert.Equal(ExperimentCache.Capacity + 2, Volatile.Read(ref calls));
+    }
+
+    private static Experiment FakeExperiment(long seed, Scenario scenario) => new($"exp-{scenario}-{seed}", seed, scenario.ToString(), []);
+
+    [Fact]
     public async Task ReadExceptionFailsOnlyThatRequest()
     {
         using var app = new MarketFactory();
@@ -354,6 +470,8 @@ public sealed class MarketTests
     {
         using var app = new MarketFactory(bots: true, frozen: true);
         using var client = app.CreateClient();
+        // The request is processed only after ExecuteAsync captures the clock origin.
+        await Get(client, "/api/state/hash");
         app.Clock.AddMilliseconds(1_000);
         await WaitUntil(() => JournalReader.Read(app.JournalPath).Commands.OfType<PlaceLimitOrder>()
             .Any(o => o.AccountId == "MarketMaker"));

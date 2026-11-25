@@ -47,7 +47,6 @@ internal sealed class MarketLoop(
     private LiveBots? _bots;
     private long _nextBotTick;
     private bool _botBatchQueued;
-    internal readonly ExperimentCache Experiments = new();
 
     internal Task SelectScenario(Scenario scenario, CancellationToken ct) => Invoke(async () =>
     {

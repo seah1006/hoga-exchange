@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Hoga.Bots;
 using Hoga.Engine;
 using Hoga.Server;
 using Microsoft.AspNetCore.Http.Features;
@@ -13,6 +14,9 @@ builder.Services.AddOptions<MarketOptions>().BindConfiguration("Market")
         o.MaxOrderQuantity is >= 1 and <= 1_000_000_000 && !string.IsNullOrWhiteSpace(o.JournalPath), "시장 설정이 올바르지 않습니다.").ValidateOnStart();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSignalR();
+builder.Services.AddSingleton(services => new ExperimentCache(
+    TimeSpan.FromMilliseconds(services.GetRequiredService<IOptions<MarketOptions>>().Value.RequestTimeoutMs),
+    (seed, scenario) => ExperimentRunner.RunExperiment(seed, scenario).Experiment));
 builder.Services.AddSingleton<MarketLoop>();
 builder.Services.AddHostedService(services => services.GetRequiredService<MarketLoop>());
 var app = builder.Build();
@@ -58,9 +62,18 @@ app.MapGet("/api/orders/{id}/explanation", async (string id, MarketLoop market, 
         ? Error(404, "NotFound", "기록 보관 기간이 지났습니다") : MissingOrder();
 });
 app.MapGet("/api/state/hash", async (MarketLoop market, CancellationToken abort) => Results.Ok(await market.Hash(abort)));
-app.MapGet("/api/experiments/{id}", async (string id, MarketLoop market, CancellationToken abort) =>
-    await market.Read(() => market.Experiments.Get(id), abort) is { } result
-        ? Results.Ok(result) : Error(404, "NotFound", "실험을 찾을 수 없습니다."));
+app.MapGet("/api/experiments/{id}", async (string id, ExperimentCache experiments, CancellationToken abort) =>
+{
+    try
+    {
+        return await experiments.Get(id, abort) is { } result
+            ? Results.Ok(result) : Error(404, "NotFound", "실험을 찾을 수 없습니다.");
+    }
+    catch (TimeoutException)
+    {
+        return Error(503, "ServiceUnavailable", "실험 결과를 기다리는 시간이 초과되었습니다.");
+    }
+});
 app.MapPost("/api/admin/scenario", async (HttpContext context, MarketLoop market, IConfiguration configuration) =>
 {
     if (!IsAdmin(context, configuration)) return Unauthorized();
