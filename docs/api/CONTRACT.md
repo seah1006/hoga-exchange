@@ -1,6 +1,7 @@
-# 서버-화면 계약 (CONTRACT) v0.4
+# 서버-화면 계약 (CONTRACT) v0.5
 
 변경 이력:
+- v0.5 (2026-11-25, dev/service) 회원·세션·CSRF, 주문 로그인 필수와 소유권, 잔고 거부 사유, 계좌·내 주문·내 체결·랭킹 API, `accountUpdate` 메시지 (ADR 0005).
 - v0.4 (2026-11-25) 실험 요약 `GET /api/experiments/summary`, run의 `minAtMs`·`maxAtMs`, 시장 초기화 `POST /api/admin/reset`과 `marketReset` 메시지, `GET /healthz` 추가 (TASK-009, TASK-007). 모두 추가만 하고 기존 필드는 바꾸지 않는다.
 - v0.3 (2026-11-25) 관리자 헤더 `X-Admin-Key`, 주문 수량 서버 한도(400), 접속 직후 메시지 순서 추가 (REVIEW-5). 접속 직후 이력 재전송은 TASK-008에서 구현.
 - v0.2 (2026-11-25) 거부 사유 목록, 실패 응답 형식, 없는 주문·실험의 404 추가 (REVIEW-2 P2-6).
@@ -164,3 +165,55 @@
 { "symbol": "HOGA", "atUtc": "2026-11-26T20:00:00Z", "reason": "Daily" }
 ```
 - `reason`: `"Daily"`(정기 초기화) | `"Admin"`(관리자). 화면은 체결·봉·내 주문 목록을 비우고 이어서 오는 `bookSnapshot`으로 다시 그린다.
+
+## 3. 회원·계좌 (v0.5, ADR 0005)
+
+### 공통
+- 세션은 쿠키. 상태를 바꾸는 모든 요청(POST/DELETE, 주문 포함)은 `GET /api/auth/csrf`로 받은 토큰을 `X-CSRF-TOKEN` 헤더에 넣는다. 없거나 틀리면 400 `{ "error": "BadCsrfToken" }`.
+- 로그인이 필요한 API를 로그인 없이 부르면 401 `{ "error": "Unauthorized" }`. 남의 주문은 404.
+- 사용자 객체: `{ "id": "u-…", "nickname": "세아", "isAdmin": false }` (이메일은 `me`에서만 반환)
+
+### 인증
+| 메서드·경로 | 요청 | 응답 |
+|---|---|---|
+| `GET /api/auth/csrf` | - | `{ "token": "…" }` |
+| `POST /api/auth/register` | `{ "email", "password", "nickname" }` | 201 사용자 객체(로그인 상태가 됨). 400 `InvalidEmail`·`WeakPassword`(10자 이상, 임의 지정)·`InvalidNickname`(2~16자), 409 `EmailTaken`·`NicknameTaken` |
+| `POST /api/auth/login` | `{ "email", "password" }` | 200 사용자 객체. 401 `InvalidCredentials`, 429 `LockedOut`(5회 실패 시 5분, 임의 지정) |
+| `POST /api/auth/logout` | - | 204 |
+| `GET /api/auth/me` | - | 200 `{ "id", "nickname", "email", "isAdmin" }` / 401 |
+| `DELETE /api/auth/me` | `{ "password" }` | 204 탈퇴(현재 라운드 주문 취소 후 계정 삭제, 라운드 기록의 닉네임은 "탈퇴한 사용자") |
+
+### 주문 (변경)
+- `POST /api/orders`, `DELETE /api/orders/{id}`, `GET /api/orders/{id}/explanation`은 로그인 필수. 주문의 소유자만 취소·조회.
+- 거부 사유 추가(HTTP 200 + `accepted:false`, `ruleId: null`, KRX 규칙 아님): `InsufficientCash`(매수 가능 현금 부족), `InsufficientShares`(매도 가능 수량 부족).
+
+### 계좌
+| 메서드·경로 | 응답 |
+|---|---|
+| `GET /api/account` | 아래 계좌 객체 |
+| `GET /api/account/orders` | 이번 라운드 내 주문 `[{ "orderId", "side", "price", "quantity", "filledQuantity", "remainingQuantity", "status", "createdAtMs" }]` (최신순, 최대 200) |
+| `GET /api/account/trades` | 이번 라운드 내 체결 `[{ "orderId", "side", "price", "quantity", "logicalTimeMs" }]` (최신순, 최대 200) |
+
+```json
+{
+  "round": "2026-11-26",
+  "cash": 9000000, "cashOnHold": 500000,
+  "shares": 1100, "sharesOnHold": 0,
+  "initialValuation": 20000000,
+  "lastPrice": 10050, "valuation": 20055000,
+  "pnl": 55000, "returnBp": 27
+}
+```
+- `valuation = cash + cashOnHold + (shares + sharesOnHold) × lastPrice`. `returnBp`는 만분율 정수(27 = 0.27%).
+
+### 랭킹
+| 메서드·경로 | 응답 |
+|---|---|
+| `GET /api/ranking` | 현재 라운드 `{ "round", "updatedAtUtc", "entries": [{ "rank", "nickname", "returnBp", "valuation" }], "me": { "rank", "returnBp", "valuation" } \| null }` 상위 50 |
+| `GET /api/ranking/{round}` | 지난 라운드(`YYYY-MM-DD`) 같은 형식, 없으면 404 |
+| `GET /api/ranking/rounds` | `["2026-11-26", …]` 최신순 최대 30 |
+- 랭킹에는 그 라운드에 주문을 한 번 이상 한 사용자만 나온다. 동률은 먼저 첫 주문한 사람이 위.
+
+### SignalR (추가)
+- 로그인한 연결에는 본인 계좌가 바뀔 때(체결·취소·초기화) `accountUpdate`(계좌 객체)를 보낸다. 접속 직후에도 1회.
+- 관리자 API(`/api/admin/*`)는 `Admin` 역할 세션(+CSRF) 또는 기존 `X-Admin-Key`로 호출할 수 있다.
