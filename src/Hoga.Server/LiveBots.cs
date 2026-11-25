@@ -4,7 +4,7 @@ using Hoga.Engine;
 namespace Hoga.Server;
 
 // Runs exclusively on the market queue. Strategies produce proposals, never engine commands.
-internal sealed class LiveBots(long seed, long basePrice)
+internal sealed class LiveBots(long seed, long basePrice, double intensity = 1.0)
 {
     internal const long TickMs = 100; // Same logical grid as TASK-005 (toy setting).
     internal const long CooldownMs = 180_000; // 임의 지정: includes a possible 150s VI auction.
@@ -32,12 +32,21 @@ internal sealed class LiveBots(long seed, long basePrice)
         Func<string, Task> cancel, Func<string, Side, long, long, Task> place)
     {
         if (CurrentScenario != Scenario.Calm && tick >= _expires) await Select(Scenario.Calm, tick, cancel);
-        _fair = Math.Clamp(_fair + 10 * (_fairStream.NextBelow(3) - 1), engine.LowerLimit, engine.UpperLimit);
-        foreach (var bot in _regular)
-            if (bot.Requote(View(tick, engine)) is { } quotes) await Requote(bot, quotes);
+        // Only the regular strategy clock slows down; the market and scenario clock do not.
+        var strategyStep = (long)Math.Floor(tick / TickMs * intensity);
+        var regularDue = strategyStep > (long)Math.Floor((tick / TickMs - 1) * intensity);
+        if (regularDue)
+        {
+            _fair = Math.Clamp(_fair + 10 * (_fairStream.NextBelow(3) - 1), engine.LowerLimit, engine.UpperLimit);
+            foreach (var bot in _regular)
+                if (bot.Requote(View(strategyStep * TickMs, engine)) is { } quotes) await Requote(bot, quotes);
+        }
         if (!_fired && CurrentScenario == Scenario.FatFinger)
         {
             _fired = true;
+            // Prime an empty/early book without waiting for the first slow maker refresh (demo policy).
+            if (intensity < 1 && _regular[0].LiveOrders.Count == 0)
+                await Requote(_regular[0], _regular[0].Requote(View(500, engine))!);
             await Requote(_fatFinger, _fatFinger.Requote(View(60_000, engine))!);
         }
         if (!_fired && CurrentScenario == Scenario.PanicSell && tick % 1_000 == 0)
@@ -46,7 +55,7 @@ internal sealed class LiveBots(long seed, long basePrice)
             // Selecting the scenario simulates two down ticks (임의 지정), so the demo fires once even in a rising market.
             await Requote(_panic, _panic.Requote(View(tick, engine) with { DownStreak = Math.Max(2, _downStreak) })!);
         }
-        if (tick % 1_000 == 0)
+        if (regularDue && strategyStep % 10 == 0)
         {
             _downStreak = engine.DynamicReferencePrice < _previousClose ? _downStreak + 1 : 0;
             _previousClose = engine.DynamicReferencePrice;

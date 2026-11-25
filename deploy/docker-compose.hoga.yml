@@ -1,0 +1,29 @@
+services:
+  hoga:
+    image: ${HOGA_IMAGE:?set a release image tag}
+    restart: unless-stopped
+    mem_limit: 192m # 임의 지정
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Urls: http://0.0.0.0:8080
+      DOTNET_GCHeapHardLimit: '0x6000000' # 임의 지정: 96 MiB managed heap
+      Market__AdminKey: ${Market__AdminKey:?configure in the server .env}
+      Market__Speed: '1'
+      Market__BotIntensity: '0.10' # 임의 지정: public workload target ≤3 new orders/s
+      Market__DailyResetLocalTime: '05:00' # 임의 지정: Asia/Seoul
+      Market__JournalPath: /data/journal/market.jsonl
+    volumes:
+      - journal:/data/journal
+    networks: [edge]
+    healthcheck:
+      test: ['CMD', 'bash', '-ec', 'exec 3<>/dev/tcp/127.0.0.1/8080; printf "GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3; read -r line <&3; [[ "$$line" == HTTP/1.1\ 200\ * ]]']
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+volumes:
+  journal:
+networks:
+  edge:
+    external: true
+    name: ${HOGA_EDGE_NETWORK:-sss_edge}

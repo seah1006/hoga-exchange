@@ -26,7 +26,7 @@ test('R-TICK-02 / R-LIMIT-04: 메시지와 실험 가격은 호가단위를 지�
         if (b.vi) prices.push(b.vi.referencePrice, b.vi.triggerPrice)
       } else if (message.type === 'candle') prices.push(message.data.open, message.data.high, message.data.low, message.data.close)
       else if (message.type === 'trade') prices.push(message.data.price)
-      else {
+      else if (message.type === 'viEvent') {
         prices.push(message.data.referencePrice, message.data.triggerPrice)
         if (message.data.type === 'Released') prices.push(message.data.auctionPrice)
       }

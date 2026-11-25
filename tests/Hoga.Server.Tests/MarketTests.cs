@@ -9,7 +9,9 @@ using Hoga.Engine;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -507,6 +509,107 @@ public sealed class MarketTests
         await AssertError(response, HttpStatusCode.ServiceUnavailable, "ServiceUnavailable");
     }
 
+    [Fact]
+    public async Task AdminResetArchivesAndPublishesEmptyMarketInOrder()
+    {
+        using var app = new MarketFactory(frozen: true, isolateJournal: true);
+        using var client = app.CreateClient();
+        await using var hub = app.Connect();
+        var events = Channel.CreateUnbounded<(string Name, JsonElement Body)>();
+        hub.On<JsonElement>("marketReset", body => events.Writer.TryWrite(("marketReset", body)));
+        hub.On<JsonElement>("bookSnapshot", body => events.Writer.TryWrite(("bookSnapshot", body)));
+        await hub.StartAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await events.Reader.ReadAsync(timeout.Token);
+        var order = await Place(client, "Buy", 10_000, 2);
+        Assert.Equal("o-1", order.GetProperty("orderId").GetString());
+        Assert.Equal(1, (await Get(client, "/healthz")).GetProperty("seq").GetInt64());
+        using var unauthorized = await client.PostAsync("/api/admin/reset", null);
+        await AssertError(unauthorized, HttpStatusCode.Unauthorized, "Unauthorized");
+        Assert.Equal("bookSnapshot", (await events.Reader.ReadAsync(timeout.Token)).Name);
+        using var reset = await Admin(client, app.Key, "reset");
+        Assert.True((await Json(reset)).GetProperty("ok").GetBoolean());
+        var signal = await events.Reader.ReadAsync(timeout.Token);
+        Assert.Equal("marketReset", signal.Name);
+        Assert.Equal("Admin", signal.Body.GetProperty("reason").GetString());
+        Assert.Equal(app.Clock.GetUtcNow(), signal.Body.GetProperty("atUtc").GetDateTimeOffset());
+        var snapshot = await events.Reader.ReadAsync(timeout.Token);
+        Assert.Equal("bookSnapshot", snapshot.Name);
+        Assert.Equal(0, snapshot.Body.GetProperty("seq").GetInt64());
+        Assert.Equal(0, snapshot.Body.GetProperty("bids").GetArrayLength());
+        Assert.Equal(0, snapshot.Body.GetProperty("logicalTimeMs").GetInt64());
+        using var missing = await client.GetAsync("/api/orders/o-1/explanation");
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.Empty(JournalReader.Read(app.JournalPath).Commands);
+        Assert.Single(JournalReader.Read(Assert.Single(app.Archives())).Commands);
+        for (var i = 0; i < 2; i++)
+        {
+            using var again = await Admin(client, app.Key, "reset");
+            Assert.True((await Json(again)).GetProperty("ok").GetBoolean());
+        }
+        Assert.Equal(2, app.Archives().Length);
+        Assert.All(app.Archives(), path => Assert.Empty(JournalReader.Read(path).Commands));
+    }
+
+    [Fact]
+    public async Task DailyResetUsesSeoulWallClockAndRunsOnlyOnce()
+    {
+        using var app = new MarketFactory(frozen: true, isolateJournal: true, dailyReset: "05:00");
+        using var client = app.CreateClient();
+        await using var hub = app.Connect();
+        var resets = Channel.CreateUnbounded<JsonElement>();
+        hub.On<JsonElement>("marketReset", body => resets.Writer.TryWrite(body));
+        await hub.StartAsync();
+        await Place(client, "Buy", 10_000, 2);
+        app.Clock.AddMilliseconds(999); // 04:59:59.999 Asia/Seoul
+        Assert.Equal(1, (await Get(client, "/healthz")).GetProperty("seq").GetInt64());
+        Assert.Empty(app.Archives());
+        app.Clock.AddMilliseconds(1);
+        var reset = await Read(resets);
+        Assert.Equal("Daily", reset.GetProperty("reason").GetString());
+        Assert.Equal(new DateTimeOffset(2026, 11, 25, 20, 0, 0, TimeSpan.Zero), reset.GetProperty("atUtc").GetDateTimeOffset());
+        Assert.Equal("market-20261126-050000.jsonl", Path.GetFileName(Assert.Single(app.Archives())));
+        app.Clock.AddMilliseconds(60_000);
+        Assert.Equal(0, (await Get(client, "/healthz")).GetProperty("seq").GetInt64());
+        Assert.False(resets.Reader.TryRead(out _));
+    }
+
+    [Fact]
+    public async Task FatFingerTriggersViBeforeFirstRegularQuoteAtPublicIntensity()
+    {
+        using var app = new MarketFactory(bots: true, frozen: true, intensity: "0.10");
+        using var client = app.CreateClient();
+        await using var hub = app.Connect();
+        var events = Channel.CreateUnbounded<JsonElement>();
+        hub.On<JsonElement>("viEvent", body => events.Writer.TryWrite(body));
+        await hub.StartAsync();
+        Assert.Equal(0, (await Get(client, "/healthz")).GetProperty("seq").GetInt64());
+        using var scenario = await Admin(client, app.Key, "scenario", "FatFinger");
+        Assert.True((await Json(scenario)).GetProperty("ok").GetBoolean());
+        app.Clock.AddMilliseconds(100);
+        var vi = await Read(events);
+        Assert.Equal("Triggered", vi.GetProperty("type").GetString());
+        Assert.Equal("R-VI-01", vi.GetProperty("ruleId").GetString());
+    }
+
+    [Fact]
+    public async Task NonCancellationBroadcastFailureDoesNotStopMarket()
+    {
+        using var app = new MarketFactory(frozen: true, throwBroadcast: true);
+        using var client = app.CreateClient();
+        await Place(client, "Buy", 10_000, 1);
+        await Place(client, "Sell", 10_000, 1);
+        Assert.Equal(2, (await Get(client, "/healthz")).GetProperty("seq").GetInt64());
+        Assert.Equal(2, JournalReader.Read(app.JournalPath).Commands.Count());
+    }
+
+    private sealed class ThrowingHub(ILogger<DefaultHubLifetimeManager<MarketHub>> logger)
+        : DefaultHubLifetimeManager<MarketHub>(logger)
+    {
+        public override Task SendGroupAsync(string groupName, string methodName, object?[] args,
+            CancellationToken cancellationToken = default) => throw new InvalidOperationException("Simulated send failure.");
+    }
+
     private static async Task WaitUntil(Func<bool> condition)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -560,9 +663,14 @@ public sealed class MarketTests
         Assert.True(after.GetProperty("restoredFromJournal").GetBoolean());
     }
 
-    private sealed class MarketFactory(string? existingPath = null, int speed = 1, bool bots = false, bool frozen = false, string? summaryPath = null) : WebApplicationFactory<Program>
+    private sealed class MarketFactory(string? existingPath = null, int speed = 1, bool bots = false,
+        bool frozen = false, bool isolateJournal = false, string? dailyReset = null, string intensity = "1.0",
+        bool throwBroadcast = false, string? summaryPath = null) : WebApplicationFactory<Program>
     {
-        public string JournalPath { get; } = existingPath ?? Path.Combine(AppContext.BaseDirectory, $"test-{Guid.NewGuid():N}.jsonl");
+        public string JournalPath { get; } = existingPath ?? (isolateJournal
+            ? Path.Combine(AppContext.BaseDirectory, Guid.NewGuid().ToString("N"), "market.jsonl")
+            : Path.Combine(AppContext.BaseDirectory, $"test-{Guid.NewGuid():N}.jsonl"));
+        public string[] Archives() => Directory.GetFiles(Path.GetDirectoryName(JournalPath)!, "market-*.jsonl");
         public string Key { get; } = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         public TestClock Clock { get; } = new(frozen);
 
@@ -570,13 +678,15 @@ public sealed class MarketTests
             .ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Market:JournalPath"] = JournalPath, ["Market:AdminKey"] = Key,
-                ["Market:Bots"] = bots.ToString(),
+                ["Market:Bots"] = bots.ToString(), ["Market:BotIntensity"] = intensity,
+                ["Market:DailyResetLocalTime"] = dailyReset,
                 ["Market:Speed"] = speed.ToString(System.Globalization.CultureInfo.InvariantCulture)
             }))
             .ConfigureServices(services =>
             {
                 services.AddSingleton<TimeProvider>(Clock);
                 if (summaryPath is not null) services.AddSingleton(new ExperimentSummaryFile(summaryPath));
+                if (throwBroadcast) services.AddSingleton<HubLifetimeManager<MarketHub>, ThrowingHub>();
             });
 
         public HubConnection Connect() => new HubConnectionBuilder()
@@ -589,13 +699,23 @@ public sealed class MarketTests
         protected override void Dispose(bool disposing)
         {
             base.Dispose(disposing);
-            if (disposing && existingPath is null) File.Delete(JournalPath);
+            if (!disposing || existingPath is not null) return;
+            if (isolateJournal)
+            {
+                var directory = Path.GetDirectoryName(JournalPath)!;
+                if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+            }
+            else File.Delete(JournalPath);
         }
     }
 
     private sealed class TestClock(bool frozen) : TimeProvider
     {
         private long _offset;
+        public override DateTimeOffset GetUtcNow() => frozen
+            ? new DateTimeOffset(2026, 11, 25, 19, 59, 59, TimeSpan.Zero)
+                .AddMilliseconds(Interlocked.Read(ref _offset) * 1000 / TimestampFrequency)
+            : base.GetUtcNow();
         public override long GetTimestamp() => (frozen ? 0 : base.GetTimestamp()) + Interlocked.Read(ref _offset);
         public void AddMilliseconds(long ms) => Interlocked.Add(ref _offset, ms * TimestampFrequency / 1000);
     }

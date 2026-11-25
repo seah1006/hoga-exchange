@@ -11,6 +11,8 @@ using Microsoft.Extensions.Options;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOptions<MarketOptions>().BindConfiguration("Market")
     .Validate(o => o.Speed is >= 1 and <= 1000 && o.RequestTimeoutMs > 0 && o.BasePrice > 0 &&
+        o.BotIntensity is >= 0 and <= 1 && (string.IsNullOrEmpty(o.DailyResetLocalTime) ||
+            MarketOptions.TryParseResetTime(o.DailyResetLocalTime, out _)) &&
         o.MaxOrderQuantity is >= 1 and <= 1_000_000_000 && !string.IsNullOrWhiteSpace(o.JournalPath), "시장 설정이 올바르지 않습니다.").ValidateOnStart();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSignalR();
@@ -34,6 +36,27 @@ app.Use(async (context, next) =>
         await Error(504, "Timeout", "처리 결과를 기다리는 시간이 초과되었습니다. 이미 시작한 요청은 적용될 수 있습니다.")
             .ExecuteAsync(context);
     }
+});
+
+var localDist = Path.GetFullPath("../../web/dist", app.Environment.ContentRootPath);
+if (!Directory.Exists(app.Environment.WebRootPath) && Directory.Exists(localDist))
+{
+    var files = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(localDist);
+    app.Lifetime.ApplicationStopped.Register(files.Dispose);
+    app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = files });
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = files });
+}
+else
+{
+    app.UseDefaultFiles();
+    app.UseStaticFiles();
+}
+
+app.MapGet("/healthz", async Task<IResult> (MarketLoop market, CancellationToken abort) =>
+{
+    try { return Results.Ok(new { ok = true, seq = await market.Health(abort) }); }
+    catch (Exception ex) when (ex is MarketUnavailableException or TimeoutException)
+    { return Results.Json(new { ok = false }, statusCode: 503); }
 });
 
 app.MapPost("/api/orders", async (HttpContext context, MarketLoop market, IOptions<MarketOptions> options) =>
@@ -106,6 +129,12 @@ app.MapPost("/api/admin/crash", async (HttpContext context, MarketLoop market, I
 {
     if (!IsAdmin(context, configuration)) return Unauthorized();
     await market.Crash(context.RequestAborted);
+    return Results.Ok(new { ok = true });
+});
+app.MapPost("/api/admin/reset", async (HttpContext context, MarketLoop market, IConfiguration configuration) =>
+{
+    if (!IsAdmin(context, configuration)) return Unauthorized();
+    await market.Reset(context.RequestAborted);
     return Results.Ok(new { ok = true });
 });
 app.MapHub<MarketHub>("/hubs/market");
