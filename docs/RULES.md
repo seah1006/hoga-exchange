@@ -57,11 +57,12 @@ R-TICK-03 근거: KRX 투자자 교육자료(2022-02), 교보·한양·한화증
 |---|---|---|
 | R-AUCT-01 | 일정 시간 접수한 호가를 하나의 가격으로 체결한다. 가격은 "가장 많은 수량을 체결시킬 수 있는 가격"(합치가격) | 1단계 |
 | R-AUCT-02 | 합치가격 P에서: P 미만 매도와 P 초과 매수는 전 수량 체결. P의 호가는 매도·매수 중 한쪽 전 수량, 다른 쪽은 매매수량단위(주권 1주) 이상을 가격·시간 우선으로 체결 | 1단계 |
-| R-AUCT-02a | 매도 합계와 매수 합계가 합치하는 가격이 정확히 두 개면, R-AUCT-02의 "다른 쪽 1주 이상" 조건을 채우지 못해도 거래를 성립시키고 가격은 R-AUCT-05로 정한다 | 1단계 |
+| R-AUCT-02a | 완전 유효한 후보가 없고, 제23조 4항 1호와 2호 가목만 만족하는 호가 가격이 두 개 이상이면(조문은 두 개, 그 이상은 임의 일반화) 나목에도 불구하고 거래 성립. 가격은 그 집합에서 R-AUCT-05로 정한다 | 1단계 (제23조 6항) |
 | R-AUCT-03 | 단일가매매도 가격·시간 우선. 같은 가격 호가 사이에 수량 배분은 하지 않는다 | 1단계 |
 | R-AUCT-04 | 모든 단일가매매는 예정 마감시점부터 30초 이내 임의 시각에 종료(랜덤 엔드). 엔진은 주입된 시드로 종료 시각을 정한다 | 1단계 |
 | R-AUCT-05 | 합치가격이 둘 이상이면 (1) 직전 가격과 같은 합치가격이 있으면 그 가격, (2) 직전 가격이 가장 높은 합치가격보다 높거나 가장 낮은 합치가격보다 낮으면 직전 가격에 가장 가까운 가격, (3) 직전 가격이 합치가격들 사이에 있으면 직전 가격보다 높은 합치가격 중 가장 가까운 가격 | 1단계 |
 | R-AUCT-07 | 단일가매매에서 체결 수량이 0이면 연장하지 않고 접속매매로 전환한다 | 1단계 |
+| R-AUCT-08 | ① 호가가 있는 가격 중 제23조 4항 1호와 2호 가·나목을 만족하는 최대 체결수량 후보에서 R-AUCT-05로 선택. ② 없으면 R-AUCT-02a(6항). ③ 그래도 교차가 남으면 호가단위 격자(빈 틱 포함)에서 같은 조건을 적용해 대체(임의 지정, 조문에 없는 안전장치) | 1단계 (제23조 4~6항 해석, 메인 결정, 확신도 중간: 5항 2호 나목이 의미를 가지려면 후보가 호가 가격이어야 함) |
 | R-AUCT-06 | 시가(또는 매매 재개 후 첫 가격)가 상·하한가로 정해지면 해당 쪽 호가에 수량 배분 | 2단계 |
 
 출처: 한국거래소 규정/제도 「단일가매매시 체결방법」(유가증권), 「매매체결방법」(코스닥), 유가증권시장 업무규정 제23조 4~6항(코스닥 업무규정 제18조 같은 문구). R-AUCT-05의 (3)은 2025-02-05 개정으로 신설됐다(메인 에이전트가 조문 사본으로 직접 확인). R-AUCT-07은 유가 시행세칙 제35조 2항(2022-12-22 신설).
@@ -120,5 +121,19 @@ VI 테스트 예시(증권사 안내 예시를 바탕으로 호가 배치를 임
 | R-MATCH-02 | `MatchingEngine.Place` | `MatchingTests.Partial_fill_keeps_priority_and_large_order_sweeps_multiple_levels`, `InvariantTests.I4_trades_take_best_price_then_earliest_resting_order` |
 | R-MATCH-03 | `MatchingEngine.Place` | `MatchingTests.Better_price_trades_first_at_resting_price` |
 | R-MATCH-04 | `MatchingEngine.Place` | `MatchingTests.Partial_fill_keeps_priority_and_large_order_sweeps_multiple_levels`, `BookTests.Book_and_queue_reflect_partial_fill_and_cancellation` |
-| R-AUCT-01~05, 02a, 07 | (TASK-002) | |
-| R-VI-01~07, 01a | (TASK-002) | |
+| R-AUCT-01 | `MatchingEngine.FindAuction`, `ExecuteAuction` | `AuctionPriceTests.Krx_book_clears_at_7830_for_600`, `AuctionInvariantTests.I8_every_auction_has_only_one_trade_price`, `AuctionOracleTests.Indicative_final_price_quantity_and_order_fills_agree_with_independent_oracle` |
+| R-AUCT-02 | `MatchingEngine.FindAuction` | `AuctionPriceTests.Krx_book_clears_at_7830_for_600`, `AuctionInvariantTests.I9_book_is_not_crossed_after_auction`, `AuctionOracleTests.Indicative_final_price_quantity_and_order_fills_agree_with_independent_oracle` |
+| R-AUCT-02a | `MatchingEngine.FindAuction` | `AuctionPriceTests.Adjacent_candidates_without_at_price_fill_can_clear`, `AuctionPriceTests.Occupied_prices_in_exception_take_priority_over_empty_ticks`, `VolatilityTests.Adjacent_tick_exception_closes_without_crossed_book`, `AuctionOracleTests.Indicative_final_price_quantity_and_order_fills_agree_with_independent_oracle` |
+| R-AUCT-03 | `MatchingEngine.ExecuteAuction` | `VolatilityTests.Krx_example_matches_600_and_allocates_at_price_in_fifo_order`, `InvariantTests.I4_trades_take_best_price_then_earliest_resting_order`, `AuctionOracleTests.Indicative_final_price_quantity_and_order_fills_agree_with_independent_oracle` |
+| R-AUCT-04 | `SplitMix64.NextAuctionExtensionMs`, `MatchingEngine.TryTriggerVi` | `AuctionTimingTests.SplitMix64_matches_reference_vector`, `VolatilityTests.Auction_ends_at_seeded_time_in_inclusive_window` |
+| R-AUCT-05 | `MatchingEngine.ChooseAuctionPrice` | `AuctionPriceTests.Rule_examples_choose_expected_price`, `AuctionPriceTests.Actual_crossing_orders_select_reference_or_nearest_boundary`, `AuctionPriceTests.One_share_at_each_occupied_price_selects_upper_candidate_over_empty_reference`, `AuctionOracleTests.Indicative_final_price_quantity_and_order_fills_agree_with_independent_oracle` |
+| R-AUCT-07 | `MatchingEngine.CompleteAuction` | `VolatilityTests.Cancel_during_auction_can_leave_no_match_and_release_before_next_command`, `AuctionOracleTests.Indicative_final_price_quantity_and_order_fills_agree_with_independent_oracle` |
+| R-AUCT-08 | `MatchingEngine.FindAuction` | `AuctionPriceTests.One_share_at_each_occupied_price_selects_upper_candidate_over_empty_reference`, `AuctionPriceTests.Occupied_prices_in_exception_take_priority_over_empty_ticks`, `AuctionPriceTests.Grid_uses_the_tick_of_each_price_band`, `VolatilityTests.Occupied_price_exception_clears_strictly_better_orders_without_grid_fallback`, `AuctionOracleTests.Seeded_oracle_sample_reports_cancellations_no_match_and_grid_usage`, `AuctionOracleTests.Indicative_final_price_quantity_and_order_fills_agree_with_independent_oracle` |
+| R-VI-01 | `MatchingEngine.Place`, `TryTriggerVi` | `VolatilityTests.Dynamic_threshold_is_inclusive`, `AuctionInvariantTests.I7_continuous_trades_do_not_touch_either_trigger` |
+| R-VI-01a | `MatchingEngine.Place` | `VolatilityTests.Sweep_fills_1200_before_9400_and_queues_remaining_300` |
+| R-VI-02 | `MatchingEngine.TryTriggerVi` | `VolatilityTests.Dynamic_threshold_is_inclusive` |
+| R-VI-03 | `MatchingEngine.TryTriggerVi` | `VolatilityTests.Static_uses_cumulative_move_then_resets_and_can_trigger_again` |
+| R-VI-04 | `MatchingEngine.Process`, `Place`, `TryTriggerVi` | `AuctionQueryTests.Indicative_auction_does_not_mutate_and_orders_report_waiting_until_release`, `VolatilityTests.Cancel_during_auction_can_leave_no_match_and_release_before_next_command`, `VolatilityTests.Crossing_order_beyond_vi_threshold_waits_without_trade_or_new_vi`, `InvariantTests.Vi_enabled_generator_closes_multiple_auctions_and_reports_coverage`, `AuctionOracleTests.Indicative_final_price_quantity_and_order_fills_agree_with_independent_oracle` |
+| R-VI-05 | `MatchingEngine.CompleteAuction` | `VolatilityTests.Static_uses_cumulative_move_then_resets_and_can_trigger_again` |
+| R-VI-06 | `MatchingEngine.TouchesVi` | `VolatilityTests.Dynamic_threshold_is_inclusive`, `AuctionInvariantTests.I7_continuous_trades_do_not_touch_either_trigger` |
+| R-VI-07 | `MatchingEngine.CompleteAuction` | `VolatilityTests.Static_uses_cumulative_move_then_resets_and_can_trigger_again`, `VolatilityTests.Cancel_during_auction_can_leave_no_match_and_release_before_next_command` |

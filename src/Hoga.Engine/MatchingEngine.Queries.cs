@@ -5,6 +5,7 @@ namespace Hoga.Engine;
 public sealed record BookLevel(long Price, long Quantity, int OrderCount);
 public sealed record BookSnapshot(IReadOnlyList<BookLevel> Bids, IReadOnlyList<BookLevel> Asks);
 public sealed record QueuePosition(int OrdersAhead, long QuantityAhead);
+public enum OrderStatus { Resting, WaitingAuction }
 
 public sealed partial class MatchingEngine
 {
@@ -28,6 +29,13 @@ public sealed partial class MatchingEngine
         return new(orders, quantity);
     }
 
+    // The engine reports active limit orders only; terminal lifecycle events are not retained here.
+    public OrderStatus? GetOrderStatus(string orderId) => !_active.ContainsKey(orderId) ? null :
+        Phase == TradingPhase.CallAuction ? OrderStatus.WaitingAuction : OrderStatus.Resting;
+
+    public IndicativeAuction? GetIndicativeAuction() =>
+        Phase == TradingPhase.CallAuction ? CalculateAuction(out _) : null;
+
     public string ComputeStateHash()
     {
         // Canonical bytes (little-endian): Int64 last sequence, base price, upper limit, lower limit;
@@ -35,7 +43,11 @@ public sealed partial class MatchingEngine
         // bids descending then asks ascending, each prefixed with an Int32 level count.
         // Per level: Int64 price, Int32 order count; per FIFO order: Int64 sequence, ID, Int64 remaining.
         // Strings: Int32 length in UTF-16 code units, followed by each code unit as UInt16.
-        // The active lookup is derived from the book; logical time and account do not affect matching.
+        // The single book above is the active continuous or auction book, depending on phase.
+        // TASK-002 suffix: two Boolean flags (VI enabled, KOSPI200), Int32 phase,
+        // Int64 dynamic/static references, UInt64 PRNG state and Boolean active VI.
+        // With active VI: Int32 kind, Int64 reference/display/start/scheduled end/actual end, rule ID.
+        // Booleans occupy one byte. Prior command times and accounts are not stored state.
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
         writer.Write(_lastSequence);
@@ -48,6 +60,23 @@ public sealed partial class MatchingEngine
             WriteString(writer, id);
         WriteSide(writer, _bids);
         WriteSide(writer, _asks);
+        writer.Write(_options.ViEnabled);
+        writer.Write(_options.IsKospi200);
+        writer.Write((int)Phase);
+        writer.Write(DynamicReferencePrice);
+        writer.Write(StaticReferencePrice);
+        writer.Write(_rng.State);
+        writer.Write(_ongoingVi is not null);
+        if (_ongoingVi is { } vi)
+        {
+            writer.Write((int)vi.Kind);
+            writer.Write(vi.ReferencePrice);
+            writer.Write(vi.TriggerPriceForDisplay);
+            writer.Write(vi.AtMs);
+            writer.Write(vi.ScheduledEndMs);
+            writer.Write(_actualEndMs);
+            WriteString(writer, vi.RuleId);
+        }
         writer.Flush();
         return Convert.ToHexStringLower(SHA256.HashData(stream.GetBuffer().AsSpan(0, checked((int)stream.Length))));
     }
