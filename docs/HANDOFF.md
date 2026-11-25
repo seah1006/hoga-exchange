@@ -76,3 +76,10 @@ npm run dev                         # http://localhost:5173, /api·/hubs는 5280
 - 배포·되돌리기: `deploy/DEPLOY.md`. 업데이트는 `pwsh ./deploy/deploy_hoga.ps1 -Server ubuntu@158.180.72.47 -Key <키> -HealthUrl https://hoga-158-180-72-47.sslip.io/healthz -Dotnet 'C:\Program Files\dotnet\dotnet.exe'` (작업 트리가 깨끗해야 한다).
 - 배포 직후 실측: 호스트 사용 335MB/952MB(여유 616MB), hoga 82MiB/192MiB, 골목장부 헬스 200.
 - 발표 주의: 공개 서버는 1배속이라 VI 단일가가 실제로 2분 걸린다. 5분 발표에서는 로컬 10배속(`Market__Speed=10`)이 낫고, 공개 주소는 백업과 질의응답용으로 쓴다.
+## 7. 서비스화 작업 (dev/service 브랜치, 발표 뒤 배포)
+- 사용자 결정(2026-11-25): 모의투자 서비스, 이메일+비밀번호, 매일 새 라운드(현금 1,000만 원 + 1,000주, 임의 지정), SQLite, 우선순위는 계정·주문 소유권 / 가상 계좌·손익·랭킹 / 운영 체계. 설계는 `docs/adr/0005-accounts-and-rounds.md`, 계약 v0.5 3장, 지시서 TASK-011(서버)·012(화면)·013(운영).
+- 발표 버전은 태그 `presentation-v1`, `main`과 공개 서버는 발표가 끝날 때까지 그대로 둔다.
+- **상태(2026-11-25 밤)**: 세 작업 모두 Codex 사용량 한도로 중간에 멈췄다. 진행분은 각 작업 브랜치에 `wip:` 커밋으로 보존(검증 전, 빌드·테스트 미확인). 사용자 결정으로 Codex 한도가 풀리면 같은 브랜치에서 이어서 한다.
+  - task/TASK-011 `75fc7fe`: Accounts/, Auth/, Ranking/ 초안, MarketLoop·Program 수정
+  - task/TASK-012 `e854b57`: Members.tsx, MemberOrders.tsx, mockMemberSource.ts, Orders.tsx 대체 중
+  - task/TASK-013 `f10897b`: .github/workflows(ci, uptime), Operations/(메트릭·백업), pull_backup.ps1
