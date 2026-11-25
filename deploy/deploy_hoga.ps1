@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory, ParameterSetName='Deploy')][string]$Key,
     [Parameter(Mandatory, ParameterSetName='Build')][switch]$BuildOnly,
     [ValidatePattern('^[A-Za-z0-9_-]+$')][string]$RemoteDir = 'hoga',
-    [uri]$HealthUrl = 'https://hoga-158-180-72-47.sslip.io/healthz',
+    [Parameter(Mandatory, ParameterSetName='Deploy')][uri]$HealthUrl,
+    [switch]$AllowDirty,
     [string]$Dotnet = 'dotnet'
 )
 $ErrorActionPreference = 'Stop'
@@ -21,6 +22,10 @@ if (!$BuildOnly) {
 $repo = Split-Path $PSScriptRoot
 Push-Location $repo
 try {
+    $dirty = git status --porcelain --untracked-files=normal
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect the worktree.' }
+    if ($dirty -and !$AllowDirty) { throw 'The worktree is dirty. Commit changes or explicitly pass -AllowDirty.' }
+    if ($dirty) { Write-Warning 'Building a dirty worktree: the release tag does not fully identify its content.' }
     $sha = git rev-parse --short HEAD
     if ($LASTEXITCODE -ne 0 -or $sha -notmatch '^[0-9a-f]+$') { throw 'Cannot resolve release commit.' }
     $release = "$sha-$([DateTime]::UtcNow.ToString('yyyyMMddHHmmssfff'))"
@@ -28,6 +33,9 @@ try {
     $stage = Join-Path $PSScriptRoot "bin/$release"
     New-Item -ItemType Directory -Path $stage | Out-Null
     Run { & $Dotnet publish src/Hoga.Server/Hoga.Server.csproj -c Release -r linux-x64 --self-contained false -o "$stage/publish" }
+    if (!(Test-Path -LiteralPath "$stage/publish/summary.json" -PathType Leaf)) {
+        throw 'Publish output is missing summary.json; refusing to package the release.'
+    }
     Push-Location web
     $oldShell = $env:npm_config_script_shell
     $oldNode = $env:NODE_OPTIONS

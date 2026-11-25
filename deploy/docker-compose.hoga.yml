@@ -3,11 +3,19 @@ services:
     image: ${HOGA_IMAGE:?set a release image tag}
     restart: unless-stopped
     mem_limit: 192m # 임의 지정
+    memswap_limit: 192m # 임의 지정: RAM과 같게 설정해 스왑 미사용
+    cpus: '0.5' # 임의 지정
+    logging:
+      driver: json-file
+      options: # 임의 지정
+        max-size: 10m
+        max-file: '3'
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Urls: http://0.0.0.0:8080
       DOTNET_GCHeapHardLimit: '0x6000000' # 임의 지정: 96 MiB managed heap
       Market__AdminKey: ${Market__AdminKey:?configure in the server .env}
+      Market__TrustedProxyNetwork: ${HOGA_EDGE_IPV4_SUBNET:?set the private Caddy/Hoga bridge IPv4 CIDR}
       Market__Speed: '1'
       Market__BotIntensity: '0.10' # 임의 지정: public workload target ≤3 new orders/s
       Market__DailyResetLocalTime: '05:00' # 임의 지정: Asia/Seoul
