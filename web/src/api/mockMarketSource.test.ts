@@ -55,9 +55,52 @@ test('R-VI-01 / R-VI-04: 기본 10배속에서 발동 12초 뒤 해제한다', a
     stop()
   } finally { vi.useRealTimers() }
 })
-test('R-LIMIT-04 주문 거부와 주문·시세 저널 복구', async () => {
+function currentBook(market: MockMarketSource) {
+  let snapshot: MarketMessage | undefined
+  const stop = market.subscribe((message) => { if (message.type === 'bookSnapshot') snapshot = message })
+  stop()
+  return snapshot
+}
+
+test.each([
+  { price: 12930, quantity: 10, reason: 'AboveUpperLimit', ruleId: 'R-LIMIT-04' },
+  { price: 6950, quantity: 10, reason: 'BelowLowerLimit', ruleId: 'R-LIMIT-04' },
+  { price: 10005, quantity: 10, reason: 'InvalidTick', ruleId: 'R-TICK-02' },
+  { price: 9990, quantity: 0, reason: 'InvalidOrder', ruleId: null },
+  { price: 9990, quantity: -1, reason: 'InvalidOrder', ruleId: null },
+  { price: 9990, quantity: 1.5, reason: 'InvalidOrder', ruleId: null },
+])('$reason: $price원 / $quantity주 거부 시 호가와 기존 주문은 그대로다', async ({ price, quantity, reason, ruleId }) => {
   const market = new MockMarketSource()
-  expect(await market.placeOrder({ side: 'Buy', price: 12930, quantity: 10 })).toMatchObject({ accepted: false, ruleId: 'R-LIMIT-04' })
+  const accepted = await market.placeOrder({ side: 'Buy', price: 9990, quantity: 10 })
+  expect(accepted.accepted).toBe(true)
+  const beforeBook = currentBook(market)
+  const beforeOrder = await market.getExplanation(accepted.orderId!)
+  const beforeHash = await market.getStateHash()
+
+  expect(await market.placeOrder({ side: 'Buy', price, quantity })).toEqual({ orderId: null, accepted: false, reason, ruleId })
+  expect(currentBook(market)).toEqual(beforeBook)
+  expect(await market.getExplanation(accepted.orderId!)).toEqual(beforeOrder)
+  expect(await market.getStateHash()).toEqual(beforeHash)
+})
+
+test('이미 취소된 주문의 재취소는 호가와 주문 상태를 바꾸지 않는다', async () => {
+  const market = new MockMarketSource()
+  const accepted = await market.placeOrder({ side: 'Buy', price: 9990, quantity: 10 })
+  const id = accepted.orderId!
+  expect(await market.cancelOrder(id)).toEqual({ orderId: id, cancelled: true, reason: null })
+  const beforeBook = currentBook(market)
+  const beforeOrder = await market.getExplanation(id)
+  const beforeHash = await market.getStateHash()
+  expect(beforeOrder).toMatchObject({ status: 'Cancelled', remainingQuantity: 0 })
+
+  expect(await market.cancelOrder(id)).toEqual({ orderId: id, cancelled: false, reason: 'OrderNotOpen' })
+  expect(currentBook(market)).toEqual(beforeBook)
+  expect(await market.getExplanation(id)).toEqual(beforeOrder)
+  expect(await market.getStateHash()).toEqual(beforeHash)
+})
+
+test('주문·시세를 저널에서 복구하고 첫 새 이벤트에서 복구 표시를 해제한다', async () => {
+  const market = new MockMarketSource()
   const accepted = await market.placeOrder({ side: 'Buy', price: 9990, quantity: 10 })
   expect(accepted.accepted).toBe(true)
   await market.runScenario('FatFinger')
@@ -65,6 +108,14 @@ test('R-LIMIT-04 주문 거부와 주문·시세 저널 복구', async () => {
   expect(await market.getExplanation(accepted.orderId!)).toMatchObject({ status: 'WaitingAuction' })
   const before = await market.getStateHash()
   expect(await market.crash()).toEqual({ ok: true })
-  expect(await market.getStateHash()).toEqual({ ...before, restoredFromJournal: true })
+  const restored = { ...before, restoredFromJournal: true }
+  expect(await market.getStateHash()).toEqual(restored)
+  expect(await market.placeOrder({ side: 'Buy', price: 9990, quantity: 0 })).toMatchObject({ accepted: false })
+  expect(await market.getStateHash()).toEqual(restored)
   expect(await market.cancelOrder(accepted.orderId!)).toMatchObject({ cancelled: true })
+  expect(await market.getStateHash()).toMatchObject({ restoredFromJournal: false })
+  await market.crash()
+  expect(await market.getStateHash()).toMatchObject({ restoredFromJournal: true })
+  market.advance()
+  expect(await market.getStateHash()).toMatchObject({ restoredFromJournal: false })
 })

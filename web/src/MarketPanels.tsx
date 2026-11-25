@@ -9,7 +9,7 @@ export function ViBanner({ book }: { book: BookSnapshot }) {
     <strong>{kind === 'Dynamic' ? '동적' : '정적'} VI · 단일가매매 진행 중</strong><span className="badge">{ruleId}</span>
     <span>참조가격 <b>{formatPrice(referencePrice)}</b></span>
     <span>약 <b>{seconds}초</b> 남음 (최대 30초 연장)</span>
-    <span>예상 체결 <b>{book.expectedPrice == null ? '미정' : formatPrice(book.expectedPrice)} / {book.expectedQuantity == null ? '미정' : formatQuantity(book.expectedQuantity)}</b></span>
+    <span>예상 체결 <b>{book.expectedPrice == null ? '미정' : formatPrice(book.expectedPrice)} / {book.expectedQuantity == null ? '미정' : formatQuantity(book.expectedQuantity)}</b> <span className="badge">목 데이터 예시값</span></span>
   </aside>
 }
 

@@ -103,10 +103,19 @@ export class MockMarketSource implements MarketSource {
   private apply(action: Action) {
     if (action.type === 'step') this.frame()
     else if (action.type === 'scenario') { this.state.name = action.name; this.state.step = 0; this.snapshot() }
-    else if (action.type === 'order') this.state.orders[`o-${++this.state.nextOrder}`] = { ...action.order, cancelled: false }
-    else this.state.orders[action.id].cancelled = true
+    else if (action.type === 'order') {
+      this.state.orders[`o-${++this.state.nextOrder}`] = { ...action.order, cancelled: false }
+      this.snapshot()
+    } else {
+      this.state.orders[action.id].cancelled = true
+      this.snapshot()
+    }
   }
-  private record(action: Action) { this.journal.push(action); this.apply(action) }
+  private record(action: Action) {
+    this.restored = false
+    this.journal.push(action)
+    this.apply(action)
+  }
   advance() { this.record({ type: 'step' }) }
   async runScenario(name: Scenario) {
     if (this.state.vi) return { ok: false }
