@@ -21,7 +21,7 @@ public sealed class SerializationTests
     public void UnknownDiscriminatorIsExplicit()
     {
         var registry = CommandRegistry.CreateDefault();
-        Assert.Throws<UnknownCommandTypeException>(() => registry.Decode("advance-time/v1", default));
+        Assert.Throws<UnknownCommandTypeException>(() => registry.Decode("no-such-type/v1", default));
     }
 
     [Fact]

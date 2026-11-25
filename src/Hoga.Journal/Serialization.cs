@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Hoga.Engine;
 
 namespace Hoga.Journal;
@@ -13,13 +14,71 @@ public interface ICommandConverter
     OrderCommand Read(JsonElement payload);
 }
 
-public sealed class JsonCommandConverter<T>(string typeId) : ICommandConverter where T : OrderCommand
+// Wire DTOs are independent of engine records. All fields are mandatory, including zero-valued fields.
+internal sealed record PlaceDto(
+    [property: JsonPropertyName("orderId")] string OrderId,
+    [property: JsonPropertyName("side")] string Side,
+    [property: JsonPropertyName("price")] long Price,
+    [property: JsonPropertyName("quantity")] long Quantity,
+    [property: JsonPropertyName("accountId")] string AccountId,
+    [property: JsonPropertyName("sequence")] long Sequence,
+    [property: JsonPropertyName("logicalTimeMs")] long LogicalTimeMs);
+internal sealed record CancelDto(
+    [property: JsonPropertyName("orderId")] string OrderId,
+    [property: JsonPropertyName("sequence")] long Sequence,
+    [property: JsonPropertyName("logicalTimeMs")] long LogicalTimeMs);
+
+internal sealed class PlaceConverter : ICommandConverter
 {
-    public string TypeId { get; } = typeId;
-    public Type CommandType => typeof(T);
-    public JsonElement Write(OrderCommand command) => JsonSerializer.SerializeToElement((T)command);
-    public OrderCommand Read(JsonElement payload) => payload.Deserialize<T>()
-        ?? throw new JsonException("Command payload cannot be null.");
+    public string TypeId => "place-limit/v1";
+    public Type CommandType => typeof(PlaceLimitOrder);
+    public JsonElement Write(OrderCommand command)
+    {
+        var c = (PlaceLimitOrder)command;
+        return JsonSerializer.SerializeToElement(new PlaceDto(c.OrderId, c.Side.ToString(), c.Price,
+            c.Quantity, c.AccountId, c.Sequence, c.LogicalTimeMs), JournalFormat.Json);
+    }
+    public OrderCommand Read(JsonElement payload)
+    {
+        var c = payload.Deserialize<PlaceDto>(JournalFormat.Json) ?? throw new JsonException("Null command.");
+        var side = c.Side switch { "Buy" => Side.Buy, "Sell" => Side.Sell, _ => throw new JsonException("Unknown side.") };
+        var command = new PlaceLimitOrder(c.OrderId, side, c.Price, c.Quantity, c.AccountId, c.Sequence, c.LogicalTimeMs);
+        CommandStructure.Validate(command);
+        return command;
+    }
+}
+internal sealed class CancelConverter : ICommandConverter
+{
+    public string TypeId => "cancel/v1";
+    public Type CommandType => typeof(CancelOrder);
+    public JsonElement Write(OrderCommand command)
+    {
+        var c = (CancelOrder)command;
+        return JsonSerializer.SerializeToElement(new CancelDto(c.OrderId, c.Sequence, c.LogicalTimeMs), JournalFormat.Json);
+    }
+    public OrderCommand Read(JsonElement payload)
+    {
+        var c = payload.Deserialize<CancelDto>(JournalFormat.Json) ?? throw new JsonException("Null command.");
+        var command = new CancelOrder(c.OrderId, c.Sequence, c.LogicalTimeMs);
+        CommandStructure.Validate(command);
+        return command;
+    }
+}
+internal static class CommandStructure
+{
+    internal static void Validate(OrderCommand command)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(command.OrderId);
+        if (command is PlaceLimitOrder place)
+        {
+            ArgumentNullException.ThrowIfNull(place.AccountId);
+            if (place.Side is not (Side.Buy or Side.Sell))
+                throw new ArgumentOutOfRangeException(nameof(command), "Unknown side.");
+        }
+        else if (command is not CancelOrder)
+            throw new ArgumentException("Unsupported engine command type.", nameof(command));
+    }
 }
 
 public sealed class CommandRegistry
@@ -28,8 +87,8 @@ public sealed class CommandRegistry
     private readonly Dictionary<Type, ICommandConverter> _types = new();
 
     public static CommandRegistry CreateDefault() => new CommandRegistry()
-        .Register(new JsonCommandConverter<PlaceLimitOrder>("place-limit/v1"))
-        .Register(new JsonCommandConverter<CancelOrder>("cancel/v1"));
+        .Register(new PlaceConverter())
+        .Register(new CancelConverter());
 
     public CommandRegistry Register(ICommandConverter converter)
     {

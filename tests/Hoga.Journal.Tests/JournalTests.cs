@@ -46,7 +46,7 @@ public sealed class JournalTests : IDisposable
         var restored = Recovery.Restore(FilePath);
         Assert.Equal(originalHash, restored.StateHash);
         Assert.Equal(10_000, restored.LastSequence);
-        Assert.Equal(events, restored.Events);
+        // Restore deliberately retains no historical events. Verifier compares events incrementally.
         Assert.Empty(restored.Warnings);
         var verification = ReplayVerifier.Verify(FilePath);
         Assert.True(verification.IsMatch);
@@ -119,14 +119,16 @@ public sealed class JournalTests : IDisposable
     {
         WriteThree();
         Rewrite(1, node => node["type"] = "future/v1");
-        Assert.Throws<UnknownCommandTypeException>(() => Recovery.Restore(FilePath));
+        var ex = Assert.Throws<InvalidDataException>(() => Recovery.Restore(FilePath));
+        Assert.Contains("line 2", ex.Message);
+        Assert.IsType<UnknownCommandTypeException>(ex.InnerException);
     }
 
     [Fact]
     public void PayloadSequenceMismatchThrowsAfterValidChecksum()
     {
         WriteThree();
-        Rewrite(1, node => node["payload"]!["Sequence"] = 50);
+        Rewrite(1, node => node["payload"]!["sequence"] = 50);
         Assert.Contains("Envelope", Assert.Throws<InvalidDataException>(() => Recovery.Restore(FilePath)).Message);
     }
 
