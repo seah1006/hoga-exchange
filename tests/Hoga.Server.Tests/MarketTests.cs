@@ -3,6 +3,8 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Channels;
+using Hoga.Journal;
+using Hoga.Engine;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -181,6 +183,203 @@ public sealed class MarketTests
         Assert.Equal(5, latest.GetProperty("bids")[0].GetProperty("quantity").GetInt64());
     }
 
+    [Fact]
+    public async Task ScenarioRequiresKeyAndRejectsUnknownName()
+    {
+        using var app = new MarketFactory();
+        using var client = app.CreateClient();
+        using var denied = await client.PostAsJsonAsync("/api/admin/scenario", new { name = "FatFinger" });
+        await AssertError(denied, HttpStatusCode.Unauthorized, "Unauthorized");
+        using var unknown = await Admin(client, app.Key, "scenario", "panic");
+        await AssertError(unknown, HttpStatusCode.BadRequest, "UnknownScenario");
+        foreach (var name in new[] { "FatFinger", "PanicSell", "Calm" })
+        {
+            using var ok = await Admin(client, app.Key, "scenario", name);
+            Assert.True((await Json(ok)).GetProperty("ok").GetBoolean());
+        }
+    }
+
+    [Fact]
+    public async Task ExperimentDemoMatchesCanonicalIdAndRejectsMalformedIds()
+    {
+        using var app = new MarketFactory();
+        using var client = app.CreateClient();
+        var demo = await Get(client, "/api/experiments/demo");
+        Assert.Equal("exp-FatFinger-16", demo.GetProperty("id").GetString());
+        Assert.Equal(16, demo.GetProperty("seed").GetInt32());
+        var runs = demo.GetProperty("runs");
+        Assert.Equal(9490, runs[0].GetProperty("minPrice").GetInt64());
+        Assert.Equal(7020, runs[1].GetProperty("minPrice").GetInt64());
+        Assert.Equal(demo.GetRawText(), (await Get(client, "/api/experiments/exp-FatFinger-16")).GetRawText());
+        foreach (var invalid in new[] { "exp-calm-1", "exp-Calm-0", "exp-Calm-1001", "exp-Calm-+1", "exp-X-1" })
+        {
+            using var response = await client.GetAsync($"/api/experiments/{invalid}");
+            await AssertError(response, HttpStatusCode.NotFound, "NotFound");
+        }
+    }
+
+    [Fact]
+    public async Task ReadExceptionFailsOnlyThatRequest()
+    {
+        using var app = new MarketFactory();
+        using var client = app.CreateClient();
+        var loop = app.Services.GetRequiredService<MarketLoop>();
+        var failure = await Assert.ThrowsAsync<MarketUnavailableException>(() =>
+            loop.Read<int>(() => throw new InvalidOperationException("test read failure"), CancellationToken.None));
+        Assert.IsType<InvalidOperationException>(failure.InnerException);
+        Assert.True((await Place(client, "Buy", 10_000, 1)).GetProperty("accepted").GetBoolean());
+        Assert.Equal(1, (await Get(client, "/api/state/hash")).GetProperty("seq").GetInt64());
+    }
+
+    [Fact]
+    public void EvictsOldestTerminalOrderButNeverAnActiveOrder()
+    {
+        var engine = new MatchingEngine(10_000, new TickSizeTable());
+        var projection = new MarketProjection();
+        Apply(new PlaceLimitOrder("o-1", Side.Buy, 10_000, 2, "rest", 1, 0));
+        for (var i = 2; i <= MarketProjection.TerminalCapacity + 2; i++)
+            Apply(new PlaceLimitOrder($"o-{i}", Side.Buy, 10_000, 0, "rest", i, 0));
+        Assert.NotNull(projection.Explain(engine, "o-1"));
+        Assert.Null(projection.Explain(engine, "o-2"));
+        Assert.True(projection.MayHaveExpired("o-2"));
+        Assert.NotNull(projection.Explain(engine, "o-3"));
+        Assert.NotNull(projection.Explain(engine, $"o-{MarketProjection.TerminalCapacity + 2}"));
+
+        void Apply(OrderCommand command) => projection.Apply(command, engine.Process(command), publish: false);
+    }
+
+    [Fact]
+    public async Task DistinguishesExpiredOrderFromAnOldNonOrderSequenceAfterReplay()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, $"test-{Guid.NewGuid():N}.jsonl");
+        try
+        {
+            var header = JournalHeader.Create(10_000, new TickSizeTable());
+            using (var writer = new JournalWriter(path, header, flushEvery: 8192))
+            {
+                writer.Append(new AdvanceTime(1, 0));
+                for (var i = 2; i <= MarketProjection.TerminalCapacity + 3; ++i)
+                    writer.Append(new PlaceLimitOrder($"o-{i}", Side.Buy, 10_000, 0, "rest", i, 0));
+            }
+            using var app = new MarketFactory(path);
+            using var client = app.CreateClient();
+            using var expired = await client.GetAsync("/api/orders/o-2/explanation");
+            Assert.Equal(HttpStatusCode.NotFound, expired.StatusCode);
+            Assert.Equal("기록 보관 기간이 지났습니다", (await expired.Content.ReadFromJsonAsync<JsonElement>())
+                .GetProperty("message").GetString());
+            using var missing = await client.GetAsync("/api/orders/o-1/explanation");
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+            Assert.Equal("주문을 찾을 수 없습니다.", (await missing.Content.ReadFromJsonAsync<JsonElement>())
+                .GetProperty("message").GetString());
+            var recent = await Get(client, $"/api/orders/o-{MarketProjection.TerminalCapacity + 3}/explanation");
+            Assert.Equal("Rejected", recent.GetProperty("status").GetString());
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Theory]
+    [InlineData(Hoga.Bots.Scenario.FatFinger, "FatFinger")]
+    [InlineData(Hoga.Bots.Scenario.PanicSell, "PanicSeller")]
+    public async Task LiveScenarioFiresOnceAndThenReturnsToCalm(Hoga.Bots.Scenario scenario, string name)
+    {
+        var bots = new LiveBots(42, 10_000);
+        var engine = new MatchingEngine(10_000, new TickSizeTable());
+        var fired = 0;
+        await bots.Select(scenario, 0, _ => Task.CompletedTask);
+        await bots.Step(1_000, engine, _ => Task.CompletedTask, Count);
+        await bots.Step(2_000, engine, _ => Task.CompletedTask, Count);
+        Assert.Equal(1, fired);
+        await bots.Step(LiveBots.CooldownMs, engine, _ => Task.CompletedTask, Count);
+        Assert.Equal(Hoga.Bots.Scenario.Calm, bots.CurrentScenario);
+        await bots.Step(LiveBots.CooldownMs + 1_000, engine, _ => Task.CompletedTask, Count);
+        Assert.Equal(1, fired);
+
+        Task Count(string account, Side side, long price, long quantity)
+        {
+            if (account == name) fired++;
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task HistoryIsSentOnlyToNewClientInCandleTradeSnapshotOrder()
+    {
+        using var app = new MarketFactory(frozen: true);
+        using var client = app.CreateClient();
+        await using var oldHub = app.Connect();
+        var old = Observe(oldHub);
+        await oldHub.StartAsync();
+        Assert.Equal("bookSnapshot", (await old.Reader.ReadAsync()).Name);
+        for (var i = 0; i < 51; i++)
+        {
+            if (i == 50) app.Clock.AddMilliseconds(60_000);
+            await Place(client, "Buy", 10_000, 1);
+            await Place(client, "Sell", 10_000, 1);
+        }
+        await using var newHub = app.Connect();
+        var history = Observe(newHub);
+        await newHub.StartAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var reader = history.Reader;
+        for (var i = 0; i < 2; i++)
+        {
+            var candle = await reader.ReadAsync(timeout.Token);
+            Assert.Equal("candle", candle.Name);
+            Assert.Equal(i * 60_000L, candle.Body.GetProperty("startMs").GetInt64());
+        }
+        for (var i = 0; i < 50; i++)
+        {
+            var trade = await reader.ReadAsync(timeout.Token);
+            Assert.Equal("trade", trade.Name);
+            Assert.Equal(i * 2L + 4, trade.Body.GetProperty("seq").GetInt64());
+        }
+        Assert.Equal("bookSnapshot", (await reader.ReadAsync(timeout.Token)).Name);
+        // The old client has exactly the live trades after all orders, no replay.
+        await WaitUntil(() => old.Reader.Count >= 102);
+        var observed = 0;
+        while (old.Reader.TryRead(out var entry)) if (entry.Name == "trade") observed++;
+        Assert.Equal(51, observed);
+
+        static Channel<(string Name, JsonElement Body)> Observe(HubConnection hub)
+        {
+            var stream = Channel.CreateUnbounded<(string, JsonElement)>();
+            foreach (var name in new[] { "candle", "trade", "bookSnapshot" })
+                hub.On<JsonElement>(name, value => stream.Writer.TryWrite((name, value)));
+            return stream;
+        }
+    }
+
+    [Fact]
+    public async Task JournaledBotsPreserveHashAcrossCrash()
+    {
+        using var app = new MarketFactory(bots: true, frozen: true);
+        using var client = app.CreateClient();
+        app.Clock.AddMilliseconds(1_000);
+        await WaitUntil(() => JournalReader.Read(app.JournalPath).Commands.OfType<PlaceLimitOrder>()
+            .Any(o => o.AccountId == "MarketMaker"));
+        var before = await Get(client, "/api/state/hash");
+        using var crash = await Admin(client, app.Key, "crash");
+        Assert.True((await Json(crash)).GetProperty("ok").GetBoolean());
+        AssertHash(before, await Get(client, "/api/state/hash"));
+        app.Clock.AddMilliseconds(1000);
+        await WaitUntil(() => JournalReader.Read(app.JournalPath).Commands.Any(c =>
+            c.Sequence > before.GetProperty("seq").GetInt64()));
+    }
+
+    private static async Task WaitUntil(Func<bool> condition)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (!condition()) await Task.Delay(20, timeout.Token);
+    }
+
+    private static async Task<HttpResponseMessage> Admin(HttpClient client, string key, string route, string? scenario = null)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"/api/admin/{route}");
+        req.Headers.Add("X-Admin-Key", key);
+        if (scenario is not null) req.Content = JsonContent.Create(new { name = scenario });
+        return await client.SendAsync(req);
+    }
+
     private static async Task<JsonElement> Read(Channel<JsonElement> channel)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -220,16 +419,17 @@ public sealed class MarketTests
         Assert.True(after.GetProperty("restoredFromJournal").GetBoolean());
     }
 
-    private sealed class MarketFactory(string? existingPath = null, int speed = 1) : WebApplicationFactory<Program>
+    private sealed class MarketFactory(string? existingPath = null, int speed = 1, bool bots = false, bool frozen = false) : WebApplicationFactory<Program>
     {
         public string JournalPath { get; } = existingPath ?? Path.Combine(AppContext.BaseDirectory, $"test-{Guid.NewGuid():N}.jsonl");
         public string Key { get; } = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-        public TestClock Clock { get; } = new();
+        public TestClock Clock { get; } = new(frozen);
 
         protected override void ConfigureWebHost(IWebHostBuilder builder) => builder
             .ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Market:JournalPath"] = JournalPath, ["Market:AdminKey"] = Key,
+                ["Market:Bots"] = bots.ToString(),
                 ["Market:Speed"] = speed.ToString(System.Globalization.CultureInfo.InvariantCulture)
             }))
             .ConfigureServices(services => services.AddSingleton<TimeProvider>(Clock));
@@ -248,10 +448,10 @@ public sealed class MarketTests
         }
     }
 
-    private sealed class TestClock : TimeProvider
+    private sealed class TestClock(bool frozen) : TimeProvider
     {
         private long _offset;
-        public override long GetTimestamp() => base.GetTimestamp() + Interlocked.Read(ref _offset);
+        public override long GetTimestamp() => (frozen ? 0 : base.GetTimestamp()) + Interlocked.Read(ref _offset);
         public void AddMilliseconds(long ms) => Interlocked.Add(ref _offset, ms * TimestampFrequency / 1000);
     }
 }
