@@ -13,3 +13,8 @@
 
 ## 막힌 것 / 제안
 - 없음. 스냅샷 및 AdvanceTime 등록은 TASK-003B 예정.
+
+## 2단계 완료
+- JSON Lines, SHA-256 앞 16자 체크섬, 연속 seq 검증, 마지막 미종료 줄 경고, 처음부터 재생과 ReplayVerifier 구현.
+- JournaledEngine으로 저널 선기록 순서 제공. ADR 0004 작성.
+- build 경고 0/오류 0, 기존 전체 57건 통과. 다음: 손상 및 1만 명령 테스트.
