@@ -78,7 +78,10 @@ public static class JournalReader
     public static JournalContents Read(string path, CommandRegistry? registry = null, JournalHeader? expectedHeader = null)
     {
         registry ??= CommandRegistry.CreateDefault();
-        var bytes = File.ReadAllBytes(path);
+        using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var buffer = new MemoryStream();
+        input.CopyTo(buffer);
+        var bytes = buffer.ToArray();
         var completeEnd = Array.LastIndexOf(bytes, (byte)'\n');
         if (completeEnd < 0) throw new InvalidDataException("Journal has no complete header.");
         string text;
