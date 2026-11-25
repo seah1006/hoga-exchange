@@ -30,12 +30,22 @@ public sealed partial class MatchingEngine
 
     public string ComputeStateHash()
     {
-        // Canonical bytes: bids descending then asks ascending; each side starts with an Int32 level count.
-        // Per level: Int64 price, Int32 order count. Per FIFO order: Int64 sequence, Int32 ID length in
-        // UTF-16 code units, each code unit as UInt16, Int64 remaining. All values are little-endian.
-        // Only the book is included, not the last input sequence, order-ID history or logical time.
+        // Canonical bytes (little-endian): Int64 last sequence, base price, upper limit, lower limit;
+        // tick rule ID; Int32 accepted ID count, then IDs in StringComparer.Ordinal order;
+        // bids descending then asks ascending, each prefixed with an Int32 level count.
+        // Per level: Int64 price, Int32 order count; per FIFO order: Int64 sequence, ID, Int64 remaining.
+        // Strings: Int32 length in UTF-16 code units, followed by each code unit as UInt16.
+        // The active lookup is derived from the book; logical time and account do not affect matching.
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
+        writer.Write(_lastSequence);
+        writer.Write(BasePrice);
+        writer.Write(UpperLimit);
+        writer.Write(LowerLimit);
+        WriteString(writer, _tickSizeRule.RuleId);
+        writer.Write(_acceptedIds.Count);
+        foreach (var id in _acceptedIds.Order(StringComparer.Ordinal))
+            WriteString(writer, id);
         WriteSide(writer, _bids);
         WriteSide(writer, _asks);
         writer.Flush();
@@ -47,6 +57,13 @@ public sealed partial class MatchingEngine
         side.Take(depth).Select(level => new BookLevel(level.Key, level.Value.Sum(order => order.Remaining), level.Value.Count))
             .ToList().AsReadOnly();
 
+    private static void WriteString(BinaryWriter writer, string value)
+    {
+        writer.Write(value.Length);
+        foreach (var unit in value)
+            writer.Write((ushort)unit);
+    }
+
     private static void WriteSide(BinaryWriter writer, SortedDictionary<long, LinkedList<RestingOrder>> side)
     {
         writer.Write(side.Count);
@@ -57,9 +74,7 @@ public sealed partial class MatchingEngine
             foreach (var order in queue)
             {
                 writer.Write(order.Sequence);
-                writer.Write(order.Id.Length);
-                foreach (var unit in order.Id)
-                    writer.Write((ushort)unit);
+                WriteString(writer, order.Id);
                 writer.Write(order.Remaining);
             }
         }

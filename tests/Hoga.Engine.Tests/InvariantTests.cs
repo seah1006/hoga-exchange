@@ -97,14 +97,26 @@ public class InvariantTests
     }
 
     [Property(MaxTest = Runs)]
-    public void I6_rejected_commands_leave_hash_unchanged(int[] inputs)
+    public void I6_rejected_commands_only_advance_sequence(int[] inputs)
     {
         var engine = NewEngine();
+        var control = NewEngine();
         foreach (var command in Commands(inputs))
         {
             var before = engine.ComputeStateHash();
             if (engine.Process(command).Any(x => x is OrderRejected))
-                Assert.Equal(before, engine.ComputeStateHash());
+            {
+                // An unknown cancel consumes the same sequence without changing orders or ID history.
+                var noOp = new CancelOrder("never-accepted", command.Sequence, command.LogicalTimeMs);
+                Assert.Equal(new OrderRejected(noOp.OrderId, RejectReason.UnknownOrder, null),
+                    Assert.Single(control.Process(noOp)));
+                Assert.NotEqual(before, engine.ComputeStateHash());
+            }
+            else
+            {
+                control.Process(command);
+            }
+            Assert.Equal(control.ComputeStateHash(), engine.ComputeStateHash());
         }
     }
 
