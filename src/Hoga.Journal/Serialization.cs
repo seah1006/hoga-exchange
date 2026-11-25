@@ -64,6 +64,25 @@ internal sealed class CancelConverter : ICommandConverter
         return command;
     }
 }
+// TASK-004: versioned wire ID (arbitrary designation), retaining the existing v1 envelope.
+internal sealed class AdvanceTimeConverter : ICommandConverter
+{
+    private sealed record Dto(
+        [property: JsonPropertyName("sequence")] long Sequence,
+        [property: JsonPropertyName("logicalTimeMs")] long LogicalTimeMs);
+
+    public string TypeId => "advance-time/v1";
+    public Type CommandType => typeof(AdvanceTime);
+    public JsonElement Write(OrderCommand command) => JsonSerializer.SerializeToElement(
+        new Dto(command.Sequence, command.LogicalTimeMs), JournalFormat.Json);
+
+    public OrderCommand Read(JsonElement payload)
+    {
+        var dto = payload.Deserialize<Dto>(JournalFormat.Json) ?? throw new JsonException("Null command.");
+        return new AdvanceTime(dto.Sequence, dto.LogicalTimeMs);
+    }
+}
+
 internal static class CommandStructure
 {
     internal static void Validate(OrderCommand command)
@@ -76,7 +95,7 @@ internal static class CommandStructure
             if (place.Side is not (Side.Buy or Side.Sell))
                 throw new ArgumentOutOfRangeException(nameof(command), "Unknown side.");
         }
-        else if (command is not CancelOrder)
+        else if (command is not (CancelOrder or AdvanceTime))
             throw new ArgumentException("Unsupported engine command type.", nameof(command));
     }
 }
@@ -88,7 +107,7 @@ public sealed class CommandRegistry
 
     public static CommandRegistry CreateDefault() => new CommandRegistry()
         .Register(new PlaceConverter())
-        .Register(new CancelConverter());
+        .Register(new CancelConverter()).Register(new AdvanceTimeConverter());
 
     public CommandRegistry Register(ICommandConverter converter)
     {

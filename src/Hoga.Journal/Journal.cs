@@ -16,7 +16,7 @@ internal static class JournalFormat
         JsonSerializer.Serialize(new JournalLine(seq, type, payload, Checksum(seq, type, payload)), Json);
 }
 
-/// <summary>Single-owner append-only writer. Existing files are never overwritten.</summary>
+/// <summary>Single-owner append-only writer. Construction never overwrites existing files.</summary>
 public sealed class JournalWriter : IDisposable
 {
     private readonly Stream _stream;
@@ -52,6 +52,47 @@ public sealed class JournalWriter : IDisposable
         }
         catch { _stream.Dispose(); throw; }
     }
+    private JournalWriter(FileStream stream, CommandRegistry? registry, long lastSequence)
+    {
+        _stream = stream;
+        _registry = registry ?? CommandRegistry.CreateDefault();
+        _flushEvery = 1;
+        _writer = new StreamWriter(stream, new UTF8Encoding(false), leaveOpen: true) { NewLine = "\n" };
+        LastSequence = lastSequence;
+    }
+
+    /// <summary>Validates an existing journal and resumes after the last complete record.</summary>
+    public static JournalWriter OpenExisting(string path, JournalHeader expectedHeader, CommandRegistry? registry = null)
+    {
+        var stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
+        try
+        {
+            var journal = JournalReader.Read(path, registry, expectedHeader);
+            long seq = 0;
+            foreach (var command in journal.Commands) seq = command.Sequence;
+            if (journal.Warnings.Count != 0)
+            {
+                // Only a non-LF-terminated tail is discardable. Search backward in bounded blocks.
+                Span<byte> block = stackalloc byte[4096];
+                for (long end = stream.Length; end > 0;)
+                {
+                    var count = (int)Math.Min(end, block.Length);
+                    end -= count;
+                    stream.Position = end;
+                    stream.ReadExactly(block[..count]);
+                    var lf = block[..count].LastIndexOf((byte)'\n');
+                    if (lf < 0) continue;
+                    stream.SetLength(end + lf + 1);
+                    stream.Flush(flushToDisk: true);
+                    break;
+                }
+            }
+            stream.Seek(0, SeekOrigin.End);
+            return new(stream, registry, seq);
+        }
+        catch { stream.Dispose(); throw; }
+    }
+
     public void Append(OrderCommand command)
     {
         CommandStructure.Validate(command);
@@ -177,14 +218,16 @@ public static class Recovery
         { throw new InvalidDataException($"Engine replay failed at journal line {command.Sequence + 1}, seq {command.Sequence}: {ex.Message}", ex); }
     }
     public static RecoveryResult Restore(string journalPath, CommandRegistry? registry = null,
-        JournalHeader? expectedHeader = null, Func<string, ITickSizeRule>? resolveRule = null)
+        JournalHeader? expectedHeader = null, Func<string, ITickSizeRule>? resolveRule = null,
+        Action<OrderCommand, IReadOnlyList<EngineEvent>>? observe = null)
     {
         var journal = JournalReader.Read(journalPath, registry, expectedHeader);
         var engine = journal.Header.CreateEngine(resolveRule);
         long seq = 0;
         foreach (var command in journal.Commands)
         {
-            _ = Apply(engine, command);
+            var events = Apply(engine, command);
+            observe?.Invoke(command, events);
             seq = command.Sequence;
         }
         return new(engine, seq, engine.ComputeStateHash(), journal.Warnings);
