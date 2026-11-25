@@ -1,15 +1,15 @@
 import type { BookSnapshot, Level, Trade } from './api/contract'
 import { formatPrice, formatQuantity, formatTime } from './format'
 
-export function ViBanner({ book }: { book: BookSnapshot }) {
+export function ViBanner({ book, server }: { book: BookSnapshot; server: boolean }) {
   if (!book.vi) return null
   const { kind, referencePrice, scheduledEndMs, ruleId } = book.vi
   const seconds = Math.max(0, Math.ceil((scheduledEndMs - book.logicalTimeMs) / 1000))
   return <aside className="vi" role="status" aria-label="변동성완화장치 진행 중">
     <strong>{kind === 'Dynamic' ? '동적' : '정적'} VI · 단일가매매 진행 중</strong><span className="badge">{ruleId}</span>
     <span>참조가격 <b>{formatPrice(referencePrice)}</b></span>
-    <span>약 <b>{seconds}초</b> 남음 (최대 30초 연장)</span>
-    <span>예상 체결 <b>{book.expectedPrice == null ? '미정' : formatPrice(book.expectedPrice)} / {book.expectedQuantity == null ? '미정' : formatQuantity(book.expectedQuantity)}</b> <span className="badge">목 데이터 예시값</span></span>
+    <span>약 <b>{seconds}초</b> 남음 (최대 30초 연장){server && ' · 거래소 논리 시간 기준'}</span>
+    <span>예상 체결 <b>{book.expectedPrice == null ? '미정' : formatPrice(book.expectedPrice)} / {book.expectedQuantity == null ? '미정' : formatQuantity(book.expectedQuantity)}</b> {!server && <span className="badge">목 데이터 예시값</span>}</span>
   </aside>
 }
 

@@ -2,14 +2,20 @@ import { useEffect, useState } from 'react'
 import type { Experiment, Scenario, StateHash } from './api/contract'
 import type { MarketSource } from './api/marketSource'
 import { formatPrice, formatTime } from './format'
+import { readAdminKey, writeAdminKey } from './api/adminKey'
+import { marketErrorMessage } from './api/serverMarketSource'
 
 export function Comparison({ source }: { source: MarketSource }) {
   const [data, setData] = useState<Experiment | null>()
+  const [error, setError] = useState('')
   useEffect(() => {
     let active = true
+    setData(undefined); setError('')
     void source.getExperiment('exp-1').then((value) => { if (active) setData(value) })
+      .catch((cause: unknown) => { if (active) setError(marketErrorMessage(cause)) })
     return () => { active = false }
   }, [source])
+  if (error) return <section className="panel"><h2>VI 비교 실험</h2><p className="error" role="alert">{error}</p></section>
   if (!data) return <section className="panel"><h2>VI 비교 실험</h2><p>{data === null ? '실험을 찾을 수 없습니다.' : '실험 불러오는 중'}</p></section>
   const on = data.runs.find((run) => run.viEnabled), off = data.runs.find((run) => !run.viEnabled)
   if (!on?.series.length || !off?.series.length) return <p>비교 시세가 없습니다.</p>
@@ -32,8 +38,17 @@ export function Comparison({ source }: { source: MarketSource }) {
 }
 
 const names: Record<Scenario, string> = { Calm: '평온', FatFinger: '팻 핑거', PanicSell: '패닉 매도' }
-export function Admin({ source, bookSeq, onReturn }: { source: MarketSource; bookSeq?: number; onReturn: () => void }) {
+function AdminKeyField() {
+  const [key, setKey] = useState(readAdminKey)
+  return <label>관리자 키 <input type="password" autoComplete="off" value={key} onChange={(event) => {
+    setKey(event.target.value)
+    writeAdminKey(event.target.value)
+  }} /></label>
+}
+
+export function Admin({ source, server, bookSeq, onReturn }: { source: MarketSource; server: boolean; bookSeq?: number; onReturn: () => void }) {
   const [note, setNote] = useState('')
+  const [error, setError] = useState('')
   const [hash, setHash] = useState<StateHash>()
   const [beforeHash, setBeforeHash] = useState<string>()
   const justRestored = hash?.restoredFromJournal && hash.seq === bookSeq
@@ -49,12 +64,18 @@ export function Admin({ source, bookSeq, onReturn }: { source: MarketSource; boo
     setBeforeHash(before.stateHash); setHash(after)
     setNote(result.ok ? '' : '복구에 실패했습니다.')
   }
+  async function perform(action: () => Promise<void>) {
+    setNote(''); setError('')
+    try { await action() } catch (cause) { setError(marketErrorMessage(cause)) }
+  }
   return <section className="panel admin"><h2>관리자 패널</h2><div className="row">
-    {(Object.keys(names) as Scenario[]).map((name) => <button key={name} onClick={() => void run(name)}>{names[name]}</button>)}
-    <button onClick={() => void restore()}>서버 강제 종료</button>
-    <button onClick={() => { setBeforeHash(undefined); void source.getStateHash().then(setHash) }}>상태 해시 조회</button>
+    {server && <AdminKeyField />}
+    {(Object.keys(names) as Scenario[]).map((name) => <button key={name} onClick={() => void perform(() => run(name))}>{names[name]}</button>)}
+    <button onClick={() => void perform(restore)}>서버 강제 종료</button>
+    <button onClick={() => void perform(async () => { setBeforeHash(undefined); setHash(await source.getStateHash()) })}>상태 해시 조회</button>
   </div><div aria-live="polite">
     {note && <p>{note}</p>}
+    {error && <p className="error" role="alert">{error}</p>}
     {hash && <p>상태 해시 <code>{hash.stateHash}</code> · 순번 {hash.seq} {justRestored && <strong className="success">재생으로 복구됨</strong>}
       {justRestored && beforeHash && <span> · 복구 전 <code>{beforeHash}</code> / {beforeHash === hash.stateHash ? '일치' : '불일치'}</span>}</p>}
   </div></section>
