@@ -13,6 +13,9 @@ internal sealed class MarketOptions
     public int Speed { get; set; } = 1;
     public int RequestTimeoutMs { get; set; } = 5000;
     public string JournalPath { get; set; } = "data/journal/market.jsonl";
+
+    // 서버 입력 한도(임의 지정, KRX 규칙 아님). 엔진·저널에 닿기 전에 막아 호가 합계 오버플로를 차단한다(REVIEW-5 P0-1).
+    public long MaxOrderQuantity { get; set; } = 1_000_000;
 }
 
 internal sealed class MarketUnavailableException(Exception? inner = null)
