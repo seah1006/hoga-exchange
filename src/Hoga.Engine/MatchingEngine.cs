@@ -19,7 +19,9 @@ public sealed partial class MatchingEngine
         BasePrice = basePrice;
         DynamicReferencePrice = basePrice;
         _tickSizeRule = tickSizeRule;
+        StaticReferencePrice = basePrice;
         _options = options ?? new();
+        _rng = new(_options.RandomSeed);
     }
 
     public long DynamicReferencePrice { get; private set; }
@@ -35,6 +37,17 @@ public sealed partial class MatchingEngine
             throw new ArgumentOutOfRangeException(nameof(command), "Sequence must start at 1 and increase by 1.");
         ArgumentNullException.ThrowIfNull(command.OrderId);
 
+        if (command is not (PlaceLimitOrder or CancelOrder or AdvanceTime))
+            throw new ArgumentException("Unsupported command type.", nameof(command));
+        if (command is PlaceLimitOrder { Side: not (Side.Buy or Side.Sell) })
+            throw new ArgumentOutOfRangeException(nameof(command), "Unknown side.");
+
+        List<EngineEvent>? due = null;
+        if (Phase == TradingPhase.CallAuction && command.LogicalTimeMs >= _actualEndMs)
+        {
+            due = [];
+            CompleteAuction(command.Sequence, due);
+        }
         var events = command switch
         {
             PlaceLimitOrder order => Place(order),
@@ -43,7 +56,10 @@ public sealed partial class MatchingEngine
             _ => throw new ArgumentException("Unsupported command type.", nameof(command)),
         };
         _lastSequence = command.Sequence;
-        return events;
+        if (due is null)
+            return events;
+        due.AddRange(events);
+        return due.AsReadOnly();
     }
 
     private IReadOnlyList<EngineEvent> Place(PlaceLimitOrder order)
@@ -73,10 +89,15 @@ public sealed partial class MatchingEngine
         var events = new List<EngineEvent> { new OrderAccepted(order.OrderId) };
         var remaining = order.Quantity;
         var opposite = order.Side == Side.Buy ? _asks : _bids;
-        while (remaining > 0 && opposite.Count != 0)
+        var submittedReference = DynamicReferencePrice; // R-VI-01: fixed for the entire sweep.
+        while (Phase == TradingPhase.Continuous && remaining > 0 && opposite.Count != 0)
         {
             var (bestPrice, queue) = opposite.First();
             if (order.Side == Side.Buy ? order.Price < bestPrice : order.Price > bestPrice)
+                break;
+
+            // R-VI-01a: test before either quantity is changed; only the unfilled tail rests.
+            if (TryTriggerVi(bestPrice, submittedReference, order.LogicalTimeMs, events))
                 break;
 
             var head = queue.First!; // R-MATCH-02: FIFO at this price.

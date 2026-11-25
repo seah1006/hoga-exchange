@@ -22,3 +22,11 @@ public sealed record Trade(string BuyOrderId, string SellOrderId, long Price, lo
 }
 public sealed record OrderCancelled(string OrderId, long RemainingQuantity) : EngineEvent;
 public sealed record OrderFilled(string OrderId) : EngineEvent;
+
+public enum ViKind { Dynamic, Static }
+
+public sealed record ViTriggered(ViKind Kind, long ReferencePrice, long TriggerPriceForDisplay,
+    long AtMs, long ScheduledEndMs, string RuleId) : EngineEvent;
+public sealed record AuctionCompleted(long Price, long Quantity, long AtMs) : EngineEvent;
+public sealed record AuctionNoMatch(long AtMs) : EngineEvent;
+public sealed record ViReleased(long AtMs) : EngineEvent;

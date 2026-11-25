@@ -13,7 +13,7 @@ public class InvariantTests
     {
         foreach (var basePrice in BasePrices)
         {
-            var engine = new MatchingEngine(basePrice, Rule);
+            var engine = new MatchingEngine(basePrice, Rule, new(ViEnabled: false));
             foreach (var command in Commands(inputs, basePrice))
             {
                 engine.Process(command);
@@ -31,7 +31,7 @@ public class InvariantTests
     {
         foreach (var basePrice in BasePrices)
         {
-            var engine = new MatchingEngine(basePrice, Rule);
+            var engine = new MatchingEngine(basePrice, Rule, new(ViEnabled: false));
             foreach (var command in Commands(inputs, basePrice))
             foreach (var trade in engine.Process(command).OfType<Trade>())
             {
@@ -46,7 +46,7 @@ public class InvariantTests
     {
         foreach (var basePrice in BasePrices)
         {
-            var engine = new MatchingEngine(basePrice, Rule);
+            var engine = new MatchingEngine(basePrice, Rule, new(ViEnabled: false));
             var ledger = new Dictionary<string, LedgerEntry>(StringComparer.Ordinal);
             foreach (var command in Commands(inputs, basePrice))
             {
@@ -90,7 +90,7 @@ public class InvariantTests
     {
         foreach (var basePrice in BasePrices)
         {
-            var engine = new MatchingEngine(basePrice, Rule);
+            var engine = new MatchingEngine(basePrice, Rule, new(ViEnabled: false));
             var ledger = new Dictionary<string, LedgerEntry>(StringComparer.Ordinal);
             foreach (var command in Commands(inputs, basePrice))
                 ApplyEvents(command, engine.Process(command), ledger, checkPriority: true);
@@ -102,8 +102,8 @@ public class InvariantTests
     {
         foreach (var basePrice in BasePrices)
         {
-            var left = new MatchingEngine(basePrice, Rule);
-            var right = new MatchingEngine(basePrice, Rule);
+            var left = new MatchingEngine(basePrice, Rule, new(ViEnabled: false));
+            var right = new MatchingEngine(basePrice, Rule, new(ViEnabled: false));
             foreach (var command in Commands(inputs, basePrice))
             {
                 Assert.Equal<EngineEvent>(left.Process(command), right.Process(command));
@@ -117,8 +117,8 @@ public class InvariantTests
     {
         foreach (var basePrice in BasePrices)
         {
-            var engine = new MatchingEngine(basePrice, Rule);
-            var control = new MatchingEngine(basePrice, Rule);
+            var engine = new MatchingEngine(basePrice, Rule, new(ViEnabled: false));
+            var control = new MatchingEngine(basePrice, Rule, new(ViEnabled: false));
             foreach (var command in Commands(inputs, basePrice))
             {
                 var before = engine.ComputeStateHash();
