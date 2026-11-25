@@ -23,7 +23,7 @@ test('시장 화면에서 vi 객체가 들어오면 배너가 나타나고 해�
   expect(banner()).toBeNull()
 })
 
-test('주문 거부, 재생 복구, 비교 화면의 시연 흐름을 렌더한다', async () => {
+test('주문 거부, 재생 복구, 실험 화면의 시연 흐름을 렌더한다', async () => {
   const source = new MockMarketSource(42, 1)
   render(<App source={source} speed={1} />)
   expect(screen.getByRole('heading', { name: '1분봉 차트' })).toBeDefined()
@@ -36,9 +36,9 @@ test('주문 거부, 재생 복구, 비교 화면의 시연 흐름을 렌더한�
   act(() => source.advance())
   expect(screen.queryByText('재생으로 복구됨')).toBeNull()
   expect(screen.queryByText(/\/ 일치/)).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: '비교 화면' }))
+  fireEvent.click(screen.getByRole('button', { name: '실험 화면' }))
   expect(await screen.findByRole('heading', { name: 'VI 비교 실험' })).toBeDefined()
-  const graph = screen.getByRole('img', { name: '같은 시드의 VI 켜짐과 꺼짐 가격 비교 그래프' })
+  const graph = await screen.findByRole('img', { name: '같은 시드의 VI 켜짐과 꺼짐 가격 비교 그래프' })
   expect(graph.querySelector('rect.auction-window')).not.toBeNull()
   expect(screen.getByText('노란 음영: 단일가매매 구간').querySelector('.auction-chip')).not.toBeNull()
   expect(screen.queryByRole('heading', { name: '1분봉 차트' })).toBeNull()

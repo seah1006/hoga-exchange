@@ -1,5 +1,6 @@
 import type { BookSnapshot, Candle, CancelResponse, ExperimentRun, Explanation, Level, MarketMessage, OrderRequest, OrderResponse, Scenario, Vi, ViEvent } from './contract'
 import type { MarketSource } from './marketSource'
+import { mockExperimentRuns, mockExperimentSummary } from './mockExperiments'
 import { formatQuantity } from '../format'
 
 const BASE = 9940, UPPER = 12920, LOWER = 6960, TICK = 10, STEP = 10_000
@@ -148,23 +149,32 @@ export class MockMarketSource implements MarketSource {
       reason: null, ruleId: vi ? 'R-VI-04' : null, message: cancelled ? '취소된 주문입니다.' :
         `${vi ? '단일가 대기 중. ' : ''}같은 가격 대기열 ${queueAhead.orders + 1}번째, 앞에 ${formatQuantity(queueAhead.quantity)}가 있습니다.` }
   }
+  async getExperimentSummary() { return mockExperimentSummary() }
   async getExperiment(id: string) {
-    // CONTRACT v0.3의 시연 시드. 기존 목 전용 ID는 호환용으로 유지한다.
-    const seed = id === 'demo' || id === 'exp-FatFinger-16' ? 16 : this.seed
     if (id === 'demo') id = 'exp-FatFinger-16'
-    if (id !== EXPERIMENT_ID && id !== 'exp-FatFinger-16') return null
+    if (id !== EXPERIMENT_ID) {
+      const match = /^exp-(Calm|FatFinger|PanicSell)-([1-9][0-9]{0,3})$/.exec(id)
+      if (!match || Number(match[2]) > 1000) return null
+      const scenario = match[1] as Scenario, seed = Number(match[2])
+      return { id, seed, scenario, runs: mockExperimentRuns(scenario, seed) }
+    }
+    // 기존 목 전용 exp-1과 그 시세를 유지한다.
+    const seed = this.seed
     const runs = [true, false].map((viEnabled): ExperimentRun => {
       const market = new MockMarketSource(seed, this.speed, viEnabled)
       const viEvents: ViEvent[] = []
       const series: ExperimentRun['series'] = []
+      const trades = [{ timeMs: 0, price: 10_000 }]
       market.listeners.add((message) => {
         if (message.type === 'viEvent') viEvents.push(message.data)
+        if (message.type === 'trade') trades.push({ timeMs: message.data.logicalTimeMs, price: message.data.price })
         if (message.type === 'bookSnapshot') series.push({ timeMs: message.data.logicalTimeMs, price: message.data.lastPrice })
       })
       market.apply({ type: 'scenario', name: 'FatFinger' })
       for (let i = 0; i < 35; i++) market.frame()
-      const prices = series.map(({ price }) => price)
-      return { viEnabled, viEvents, series, minPrice: Math.min(...prices), maxPrice: Math.max(...prices) }
+      const min = trades.reduce((best, trade) => trade.price < best.price ? trade : best)
+      const max = trades.reduce((best, trade) => trade.price > best.price ? trade : best)
+      return { viEnabled, viEvents, series, minPrice: min.price, maxPrice: max.price, minAtMs: min.timeMs, maxAtMs: max.timeMs }
     })
     return { id, seed, scenario: 'FatFinger' as const, runs }
   }
