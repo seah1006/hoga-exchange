@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { BookSnapshot, Candle, Trade } from './api/contract'
 import type { MarketConnection, MarketSource } from './api/marketSource'
 import { CandleChart } from './CandleChart'
@@ -16,7 +16,8 @@ export function App({ source, speed }: { source: MarketSource; speed?: number })
   const [connection, setConnection] = useState<MarketConnection>('connecting')
   const [book, setBook] = useState<BookSnapshot>()
   const [candles, setCandles] = useState<Candle[]>([])
-  const [trades, setTrades] = useState<Trade[]>([])
+  const [trades, setTrades] = useState<(Trade & { receipt: number })[]>([])
+  const nextTradeReceipt = useRef(0)
   const [price, setPrice] = useState('')
   const [view, setView] = useState<'market' | 'comparison'>('market')
   useEffect(() => {
@@ -26,7 +27,11 @@ export function App({ source, speed }: { source: MarketSource; speed?: number })
     })
     const unsubscribe = source.subscribe((message) => {
       if (message.type === 'bookSnapshot') setBook(message.data)
-      if (message.type === 'trade') setTrades((old) => [message.data, ...old.filter(({ seq }) => seq !== message.data.seq)].slice(0, server ? 50 : 6))
+      if (message.type === 'trade') {
+        const trade = { ...message.data, receipt: nextTradeReceipt.current++ }
+        // 서버의 연결별 이력과 라이브는 겹치지 않고, 한 명령의 seq에 여러 체결이 있을 수 있다.
+        setTrades((old) => [trade, ...(server ? old : old.filter(({ seq }) => seq !== trade.seq))].slice(0, server ? 50 : 6))
+      }
       if (message.type === 'candle') setCandles((old) => {
         const next = [...old.filter((bar) => bar.startMs !== message.data.startMs), message.data].sort((a, b) => a.startMs - b.startMs)
         return server ? next : next.slice(-60)

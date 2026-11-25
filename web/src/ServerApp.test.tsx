@@ -95,6 +95,21 @@ test('이력 전송과 연결 완료 알림 순서에 관계없이 재연결 때
   expect(screen.getByText('시세 서버 연결됨')).toBeDefined()
 })
 
+test('서버 이력과 라이브에서 동일 seq의 체결을 개별 행으로 표시한다', () => {
+  const { book, emit, showBook } = setup()
+  const trade = { ...fixture.trade, symbol: 'HOGA', seq: book.seq - 1, quantity: 75, aggressorSide: 'Buy' } as const
+  emit('trade', trade)
+  emit('trade', { ...trade, quantity: 80 })
+  showBook(book)
+  const trades = within(screen.getByRole('region', { name: '최근 체결' }))
+  const quantities = () => trades.getAllByRole('row').slice(1).map((row) => within(row).getAllByRole('cell')[2].textContent)
+  expect(quantities()).toEqual(['80주', '75주'])
+  const liveTrade = { ...trade, seq: book.seq + 1, quantity: 120 }
+  emit('trade', liveTrade)
+  emit('trade', liveTrade)
+  expect(quantities()).toEqual(['120주', '120주', '80주', '75주'])
+})
+
 test('서버 비교 화면은 demo 별칭으로 조회한다', async () => {
   const { fetcher } = setup()
   fetcher.mockResolvedValueOnce(Response.json({}, { status: 404 }))
