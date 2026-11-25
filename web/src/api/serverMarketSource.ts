@@ -5,7 +5,7 @@ import { readAdminKey } from './adminKey'
 
 // SignalR 자동 재연결은 첫 접속 실패나 재시도 소진 이후의 접속을 다루지 않는다.
 const restartDelayMs = 5_000
-const events = ['bookSnapshot', 'trade', 'candle', 'viEvent'] as const
+const events = ['bookSnapshot', 'trade', 'candle', 'viEvent', 'marketReset'] as const
 
 export interface MarketHub {
   on<K extends keyof Messages>(name: K, handler: (data: Messages[K]) => void): void

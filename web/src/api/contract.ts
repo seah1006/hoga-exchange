@@ -23,7 +23,8 @@ export interface Trade {
 export interface Candle { symbol: 'HOGA'; startMs: number; open: number; high: number; low: number; close: number; volume: number }
 interface ViEventFields { kind: ViKind; referencePrice: number; triggerPrice: number; atMs: number; ruleId: string }
 export type ViEvent = ViEventFields & ({ type: 'Triggered' } | { type: 'Released'; auctionPrice: number })
-export interface Messages { bookSnapshot: BookSnapshot; trade: Trade; candle: Candle; viEvent: ViEvent }
+export interface MarketReset { symbol: 'HOGA'; atUtc: string; reason: 'Daily' | 'Admin' }
+export interface Messages { marketReset: MarketReset; bookSnapshot: BookSnapshot; trade: Trade; candle: Candle; viEvent: ViEvent }
 export type MarketMessage = { [K in keyof Messages]: { type: K; data: Messages[K] } }[keyof Messages]
 export interface OrderRequest { side: Side; price: number; quantity: number }
 export type OrderResponse =

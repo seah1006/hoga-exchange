@@ -95,6 +95,26 @@ test('이력 전송과 연결 완료 알림 순서에 관계없이 재연결 때
   expect(screen.getByText('시세 서버 연결됨')).toBeDefined()
 })
 
+test('시장 초기화는 체결·봉·내 주문을 비우고 안내를 표시한다', async () => {
+  const { book, emit, fetcher, showBook } = setup()
+  showBook(book)
+  emit('candle', { ...fixture.candle, symbol: 'HOGA', startMs: 60_000 })
+  emit('trade', { ...fixture.trade, symbol: 'HOGA', quantity: 75, aggressorSide: 'Buy' })
+  fetcher.mockResolvedValueOnce(Response.json(fixture.accepted)).mockResolvedValueOnce(Response.json(fixture.explanation))
+  fireEvent.click(screen.getByRole('button', { name: '매수 주문' }))
+  expect(await screen.findByRole('button', { name: 'o-123 취소' })).toBeDefined()
+  expect(screen.getByLabelText('봉 시작 시각').textContent).toBe('60000')
+  expect(within(screen.getByRole('region', { name: '최근 체결' })).getByText('75주')).toBeDefined()
+  act(() => {
+    emit('marketReset', { symbol: 'HOGA', atUtc: '2026-11-25T20:00:00Z', reason: 'Daily' })
+    showBook({ ...book, seq: 0, logicalTimeMs: 0, asks: [], bids: [] })
+  })
+  expect(screen.getByText('시장이 초기화되었습니다')).toBeDefined()
+  expect(screen.getByLabelText('봉 시작 시각').textContent).toBe('')
+  expect(within(screen.getByRole('region', { name: '최근 체결' })).getByText('첫 체결 대기 중')).toBeDefined()
+  expect(screen.queryByRole('button', { name: 'o-123 취소' })).toBeNull()
+})
+
 test('서버 이력과 라이브에서 동일 seq의 체결을 개별 행으로 표시한다', () => {
   const { book, emit, showBook } = setup()
   const trade = { ...fixture.trade, symbol: 'HOGA', seq: book.seq - 1, quantity: 75, aggressorSide: 'Buy' } as const

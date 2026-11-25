@@ -18,6 +18,7 @@ export function App({ source, speed }: { source: MarketSource; speed?: number })
   const [candles, setCandles] = useState<Candle[]>([])
   const [trades, setTrades] = useState<(Trade & { receipt: number })[]>([])
   const nextTradeReceipt = useRef(0)
+  const [resetCount, setResetCount] = useState(0)
   const [price, setPrice] = useState('')
   const [view, setView] = useState<'market' | 'comparison'>('market')
   useEffect(() => {
@@ -26,6 +27,9 @@ export function App({ source, speed }: { source: MarketSource; speed?: number })
       setConnection(status)
     })
     const unsubscribe = source.subscribe((message) => {
+      if (server && message.type === 'marketReset') {
+        setBook(undefined); setTrades([]); setCandles([]); setPrice(''); setResetCount((count) => count + 1)
+      }
       if (message.type === 'bookSnapshot') setBook(message.data)
       if (message.type === 'trade') {
         const trade = { ...message.data, receipt: nextTradeReceipt.current++ }
@@ -42,12 +46,13 @@ export function App({ source, speed }: { source: MarketSource; speed?: number })
   return <main>
     <header><div><span className="eyebrow">시장 구조 실습 · {server ? '서버 데이터' : '목 데이터'}</span><h1>호가 거래소</h1></div><nav className="row" aria-label="화면 선택"><button aria-pressed={view === 'market'} onClick={() => setView('market')}>시장 화면</button><button aria-pressed={view === 'comparison'} onClick={() => setView('comparison')}>비교 화면</button>{server ? <span className="badge" role="status">{connectionLabels[connection]}</span> : <span className="badge">{speed}배속</span>}</nav></header>
     <Admin server={server} source={source} bookSeq={book?.seq} onReturn={() => setView('market')} />
+    {resetCount > 0 && <p key={resetCount} role="status">시장이 초기화되었습니다</p>}
     <div hidden={view !== 'market'}>
     {server && book && connection !== 'connected' && connection !== 'syncing' && <p className="muted">연결이 복구될 때까지 마지막으로 받은 시세를 표시합니다.</p>}
     {book ? <>
       <section className="summary panel" aria-label="시세 요약"><div><span>HOGA · 현재가</span><strong>{formatPrice(book.lastPrice)}</strong></div><div><span>기준가</span><b>{formatPrice(book.basePrice)}</b></div><div><span>상한가</span><b className="buy">{formatPrice(book.upperLimit)}</b></div><div><span>하한가</span><b className="sell">{formatPrice(book.lowerLimit)}</b></div><div><span>{book.phase === 'Continuous' ? '접속매매' : '단일가매매'}</span><b>{formatTime(book.logicalTimeMs)}</b></div></section>
       <ViBanner book={book} server={server} />
-      <div className="market"><OrderBook book={book} onPrice={(value) => setPrice(String(value))} /><div className="stack"><section className="panel"><h2>1분봉 차트</h2><CandleChart candles={candles} /></section><TradeList trades={trades} /></div><Orders book={book} price={price} onPrice={setPrice} source={source} canPoll={!server || connection === 'connected'} /></div>
+      <div className="market"><OrderBook book={book} onPrice={(value) => setPrice(String(value))} /><div className="stack"><section className="panel"><h2>1분봉 차트</h2><CandleChart candles={candles} /></section><TradeList trades={trades} /></div><Orders key={resetCount} book={book} price={price} onPrice={setPrice} source={source} canPoll={!server || connection === 'connected'} /></div>
     </> : <p>시세 불러오는 중</p>}
     </div>
     {view === 'comparison' && <Comparison source={source} />}
