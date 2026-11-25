@@ -6,7 +6,29 @@ namespace Hoga.Server;
 internal sealed class MarketProjection
 {
     private readonly Dictionary<string, OrderView> _orders = new(StringComparer.Ordinal);
-    private Candle? _candle;
+    internal const int TerminalCapacity = 4096; // 임의 지정
+    private const int TradeCapacity = 50; // 계약 v0.3
+    private const long DayMs = 86_400_000; // 임의 지정: logical day until sessions are introduced.
+    private readonly Queue<string> _terminal = new();
+    private readonly SortedDictionary<long, Candle> _candles = new();
+    private readonly Queue<object> _trades = new();
+    private long _day;
+    private long _lastEvictedSequence;
+    internal IEnumerable<object> Candles => _candles.Values;
+    internal IEnumerable<object> Trades => _trades;
+    internal bool MayHaveExpired(string id) => id.StartsWith("o-", StringComparison.Ordinal) &&
+        long.TryParse(id.AsSpan(2), NumberStyles.None, CultureInfo.InvariantCulture, out var seq) &&
+        seq > 0 && seq <= _lastEvictedSequence && id == "o-" + seq.ToString(CultureInfo.InvariantCulture);
+
+    private void Complete(string id)
+    {
+        _terminal.Enqueue(id);
+        if (_terminal.Count <= TerminalCapacity) return;
+        var expired = _terminal.Dequeue();
+        var sequence = _orders[expired].Source.Sequence;
+        _lastEvictedSequence = Math.Max(_lastEvictedSequence, sequence);
+        _orders.Remove(expired);
+    }
     public const string Symbol = "HOGA";
     public ViTriggered? Vi { get; private set; }
     public long LogicalTimeMs { get; private set; }
@@ -16,6 +38,8 @@ internal sealed class MarketProjection
         bool publish)
     {
         LogicalTimeMs = command.LogicalTimeMs;
+        var day = LogicalTimeMs / DayMs;
+        if (day != _day) { _candles.Clear(); _day = day; }
         if (command is PlaceLimitOrder place) _orders.Add(place.OrderId, new(place));
         var messages = new List<(string, object)>();
         var end = events.OfType<AuctionCompleted>().SingleOrDefault();
@@ -25,23 +49,35 @@ internal sealed class MarketProjection
             {
                 case OrderRejected failure when command is PlaceLimitOrder:
                     _orders[failure.OrderId].Reject(failure);
+                    Complete(failure.OrderId);
                     break;
                 case OrderCancelled cancel:
                     _orders[cancel.OrderId].Cancelled = true;
+                    Complete(cancel.OrderId);
+                    break;
+                case OrderFilled filled:
+                    Complete(filled.OrderId);
                     break;
                 case Trade trade:
                     _orders[trade.BuyOrderId].Remaining -= trade.Quantity;
                     _orders[trade.SellOrderId].Remaining -= trade.Quantity;
                     var at = trade.HasAggressor ? command.LogicalTimeMs : end!.AtMs;
                     var side = trade.HasAggressor ? ((PlaceLimitOrder)command).Side.ToString() : null;
-                    Emit("trade", new { symbol = Symbol, seq = trade.Sequence, logicalTimeMs = at,
-                        trade.Price, trade.Quantity, aggressorSide = side });
-                    var start = at / 60_000 * 60_000;
-                    _candle = _candle is { } prior && prior.StartMs == start
-                        ? prior with { High = Math.Max(prior.High, trade.Price), Low = Math.Min(prior.Low, trade.Price),
-                            Close = trade.Price, Volume = prior.Volume + trade.Quantity }
-                        : new(Symbol, start, trade.Price, trade.Price, trade.Price, trade.Price, trade.Quantity);
-                    Emit("candle", _candle);
+                    var payload = new { symbol = Symbol, seq = trade.Sequence, logicalTimeMs = at,
+                        trade.Price, trade.Quantity, aggressorSide = side };
+                    if (_trades.Count == TradeCapacity) _trades.Dequeue();
+                    _trades.Enqueue(payload);
+                    Emit("trade", payload);
+                    if (at / DayMs == _day)
+                    {
+                        var start = at / 60_000 * 60_000;
+                        var candle = _candles.TryGetValue(start, out var prior)
+                            ? prior with { High = Math.Max(prior.High, trade.Price), Low = Math.Min(prior.Low, trade.Price),
+                                Close = trade.Price, Volume = prior.Volume + trade.Quantity }
+                            : new(Symbol, start, trade.Price, trade.Price, trade.Price, trade.Price, trade.Quantity);
+                        _candles[start] = candle;
+                        Emit("candle", candle);
+                    }
                     break;
                 case ViTriggered active:
                     Vi = active;
