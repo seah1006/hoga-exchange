@@ -20,6 +20,7 @@
 |---|---|
 | [docs/PLAN.md](docs/PLAN.md) | 목표, 범위, 일정, 시연 시나리오, 결정 기록 |
 | [docs/RULES.md](docs/RULES.md) | KRX 규칙 명세와 출처, 단순화한 부분, 추적표 |
+| [docs/api/CONTRACT.md](docs/api/CONTRACT.md) | 서버-화면 메시지 계약 |
 | [docs/adr/](docs/adr/) | 설계 결정 기록 |
 | [docs/tasks/](docs/tasks/) | 구현 작업 지시서 |
 | [AGENTS.md](AGENTS.md) | 에이전트 작업 규칙 |
