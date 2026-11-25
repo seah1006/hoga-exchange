@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Threading.Channels;
 using Hoga.Engine;
+using Hoga.Bots;
 using Hoga.Journal;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
@@ -9,6 +10,8 @@ namespace Hoga.Server;
 
 internal sealed class MarketOptions
 {
+    public bool Bots { get; set; } = true;
+    public long BotSeed { get; set; } = 42; // 임의 지정
     public long BasePrice { get; set; } = 10_000;
     public int Speed { get; set; } = 1;
     public int RequestTimeoutMs { get; set; } = 5000;
@@ -40,6 +43,21 @@ internal sealed class MarketLoop(
     private long _seq, _timeAtStart, _timeOrigin, _lastBroadcast;
     private bool _restored, _snapshotPending, _broadcastStarted;
     private CancellationToken _stopping;
+    private readonly SemaphoreSlim _expiredRead = new(1); // 임의 지정: cap concurrent journal scans.
+    private LiveBots? _bots;
+    private long _nextBotTick;
+    private bool _botBatchQueued;
+    internal readonly ExperimentCache Experiments = new();
+
+    internal Task SelectScenario(Scenario scenario, CancellationToken ct) => Invoke(async () =>
+    {
+        if (_bots is not null)
+            await _bots.Select(scenario, LogicalNow(), id => CancelBot(id, LogicalNow()));
+        return true;
+    }, ct);
+
+    internal Task<T> Read<T>(Func<T> work, CancellationToken ct) =>
+        Invoke(() => ValueTask.FromResult(work()), ct, readOnly: true);
 
     internal Task<object> Place(Side side, long price, long quantity, CancellationToken ct) => Invoke(async () =>
     {
@@ -59,13 +77,27 @@ internal sealed class MarketLoop(
         return (object?)new { orderId = id, cancelled = failure is null, reason = failure?.Reason.ToString() };
     }, ct);
 
-    internal Task<object?> Explain(string id, CancellationToken ct) =>
-        Invoke(() => ValueTask.FromResult(_projection.Explain(_engine, id)), ct);
+    internal async Task<(object? Result, bool Expired)> ExplainOrder(string id, CancellationToken ct)
+    {
+        var (result, candidate) = await Read(() => (_projection.Explain(_engine, id), _projection.MayHaveExpired(id)), ct);
+        if (result is not null || !candidate) return (result, false);
+        // No unbounded tombstones: verify against disk outside the market loop.
+        await _expiredRead.WaitAsync(ct);
+        try
+        {
+            var seq = long.Parse(id.AsSpan(2), CultureInfo.InvariantCulture);
+            var expired = await Task.Run(() => JournalReader.Read(_path).Commands
+                .TakeWhile(c => { ct.ThrowIfCancellationRequested(); return c.Sequence <= seq; })
+                .Any(c => c.Sequence == seq && c is PlaceLimitOrder p && p.OrderId == id), ct);
+            return (null, expired);
+        }
+        finally { _expiredRead.Release(); }
+    }
 
-    internal Task<object> Hash(CancellationToken ct) => Invoke(() => ValueTask.FromResult<object>(new
+    internal Task<object> Hash(CancellationToken ct) => Read<object>(() => new
     {
         seq = _seq, stateHash = _engine.ComputeStateHash(), restoredFromJournal = _restored
-    }), ct);
+    }, ct);
 
     internal Task<bool> Subscribe(string id, CancellationToken ct) => Invoke(async () =>
     {
@@ -74,12 +106,15 @@ internal sealed class MarketLoop(
         try
         {
             // Subscribe in the same loop so the initial state cannot be overtaken by a change broadcast.
-            await hub.Clients.Client(id).SendAsync("bookSnapshot", _projection.Snapshot(_engine, _seq), send.Token);
+            var client = hub.Clients.Client(id);
+            foreach (var candle in _projection.Candles) await client.SendAsync("candle", candle, send.Token);
+            foreach (var trade in _projection.Trades) await client.SendAsync("trade", trade, send.Token);
+            await client.SendAsync("bookSnapshot", _projection.Snapshot(_engine, _seq), send.Token);
             await hub.Groups.AddToGroupAsync(id, MarketHub.Group, send.Token);
             return true;
         }
         catch (OperationCanceledException) when (send.IsCancellationRequested) { return false; }
-    }, ct);
+    }, ct, readOnly: true);
 
     internal Task Crash(CancellationToken ct) => Invoke(() =>
     {
@@ -95,10 +130,10 @@ internal sealed class MarketLoop(
         return ValueTask.FromResult(true);
     }, ct);
 
-    private async Task<T> Invoke<T>(Func<ValueTask<T>> work, CancellationToken ct)
+    private async Task<T> Invoke<T>(Func<ValueTask<T>> work, CancellationToken ct, bool readOnly = false)
     {
         ct.ThrowIfCancellationRequested();
-        var request = new Request<T>(work);
+        var request = new Request<T>(work, readOnly);
         if (!_requests.Writer.TryWrite(request)) throw new MarketUnavailableException();
         try { return await request.Completion.Task.WaitAsync(TimeSpan.FromMilliseconds(configuration.Value.RequestTimeoutMs), ct); }
         catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
@@ -116,7 +151,8 @@ internal sealed class MarketLoop(
             _path = Path.GetFullPath(configuration.Value.JournalPath, environment.ContentRootPath);
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
             _header = JournalHeader.Create(configuration.Value.BasePrice, new TickSizeTable());
-            if (File.Exists(_path)) Restore();
+            if (configuration.Value.Bots) _bots = new(configuration.Value.BotSeed, configuration.Value.BasePrice);
+            if (File.Exists(_path)) Restore(rebuildBots: true);
             else
             {
                 _writer = new JournalWriter(_path, _header);
@@ -126,6 +162,7 @@ internal sealed class MarketLoop(
             }
             _timeAtStart = _projection.LogicalTimeMs;
             _timeOrigin = time.GetTimestamp();
+            _nextBotTick = (_timeAtStart / LiveBots.TickMs + 1) * LiveBots.TickMs;
             using var timer = new PeriodicTimer(Cadence, time);
             var tick = timer.WaitForNextTickAsync(stoppingToken).AsTask();
             var ready = _requests.Reader.WaitToReadAsync(stoppingToken).AsTask();
@@ -155,12 +192,16 @@ internal sealed class MarketLoop(
         }
     }
 
-    private void Restore()
+    private void Restore(bool rebuildBots = false)
     {
         _writer = JournalWriter.OpenExisting(_path, _header);
         var projection = new MarketProjection();
         var restored = Recovery.Restore(_path, expectedHeader: _header,
-            observe: (command, events) => projection.Apply(command, events, publish: false));
+            observe: (command, events) =>
+            {
+                projection.Apply(command, events, publish: false);
+                if (rebuildBots) _bots?.Observe(command, events);
+            });
         _projection = projection;
         _engine = restored.Engine;
         _seq = restored.LastSequence;
@@ -175,14 +216,38 @@ internal sealed class MarketLoop(
         // Continuous matching does not require periodic input. Avoid idle writes and sequence/hash churn.
         if (_projection.Vi is not null)
             await Process(new AdvanceTime(checked(_seq + 1), LogicalNow()));
+        if (_bots is not null && !_botBatchQueued && _nextBotTick <= LogicalNow())
+            _botBatchQueued = _requests.Writer.TryWrite(new BotBatch(RunBots));
         await PublishSnapshotIfDue();
     }
+
+    private async Task RunBots()
+    {
+        _botBatchQueued = false;
+        var now = LogicalNow();
+        // At most one bounded batch is queued; yield to REST after each batch.
+        for (var i = 0; i < 20 && _nextBotTick <= now && !_stopping.IsCancellationRequested; i++)
+        {
+            var tick = _nextBotTick;
+            _nextBotTick += LiveBots.TickMs;
+            await _bots!.Step(tick, _engine, id => CancelBot(id, tick), async (account, side, price, quantity) =>
+            {
+                var next = checked(_seq + 1);
+                await Process(new PlaceLimitOrder("o-" + next.ToString(CultureInfo.InvariantCulture), side,
+                    price, quantity, account, next, Math.Max(tick, _projection.LogicalTimeMs)));
+            });
+        }
+    }
+
+    private async Task CancelBot(string id, long logicalTime) =>
+        await Process(new CancelOrder(id, checked(_seq + 1), Math.Max(logicalTime, _projection.LogicalTimeMs)));
 
     private async Task<IReadOnlyList<EngineEvent>> Process(OrderCommand command)
     {
         _writer!.Append(command);
         var events = _engine.Process(command);
         _seq = command.Sequence;
+        _bots?.Observe(command, events);
         var messages = _projection.Apply(command, events, publish: true);
         if (events.Any(e => e is not OrderRejected) || command is AdvanceTime) _snapshotPending = true;
         foreach (var (name, payload) in messages) await Broadcast(name, payload);
@@ -214,7 +279,13 @@ internal sealed class MarketLoop(
         void Fail(Exception ex);
     }
 
-    private sealed class Request<T>(Func<ValueTask<T>> work) : IRequest
+    private sealed class BotBatch(Func<Task> run) : IRequest
+    {
+        public Task Run() => run();
+        public void Fail(Exception ex) { }
+    }
+
+    private sealed class Request<T>(Func<ValueTask<T>> work, bool readOnly) : IRequest
     {
         private int _claimed;
         public TaskCompletionSource<T> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -230,6 +301,7 @@ internal sealed class MarketLoop(
             catch (Exception ex)
             {
                 Completion.TrySetException(new MarketUnavailableException(ex));
+                if (readOnly) return;
                 // An input may have reached disk; never continue against partially applied state.
                 throw;
             }

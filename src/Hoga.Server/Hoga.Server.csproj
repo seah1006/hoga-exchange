@@ -3,6 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../Hoga.Bots/Hoga.Bots.csproj" />
     <ProjectReference Include="../Hoga.Engine/Hoga.Engine.csproj" />
     <ProjectReference Include="../Hoga.Journal/Hoga.Journal.csproj" />
   </ItemGroup>

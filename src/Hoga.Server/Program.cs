@@ -52,16 +52,34 @@ app.MapPost("/api/orders", async (HttpContext context, MarketLoop market, IOptio
 app.MapDelete("/api/orders/{id}", async (string id, MarketLoop market, CancellationToken abort) =>
     await market.Cancel(id, abort) is { } result ? Results.Ok(result) : MissingOrder());
 app.MapGet("/api/orders/{id}/explanation", async (string id, MarketLoop market, CancellationToken abort) =>
-    await market.Explain(id, abort) is { } result ? Results.Ok(result) : MissingOrder());
+{
+    var (result, expired) = await market.ExplainOrder(id, abort);
+    return result is not null ? Results.Ok(result) : expired
+        ? Error(404, "NotFound", "기록 보관 기간이 지났습니다") : MissingOrder();
+});
 app.MapGet("/api/state/hash", async (MarketLoop market, CancellationToken abort) => Results.Ok(await market.Hash(abort)));
-app.MapGet("/api/experiments/{id}", () => Error(404, "NotFound", "실험을 찾을 수 없습니다."));
+app.MapGet("/api/experiments/{id}", async (string id, MarketLoop market, CancellationToken abort) =>
+    await market.Read(() => market.Experiments.Get(id), abort) is { } result
+        ? Results.Ok(result) : Error(404, "NotFound", "실험을 찾을 수 없습니다."));
+app.MapPost("/api/admin/scenario", async (HttpContext context, MarketLoop market, IConfiguration configuration) =>
+{
+    if (!IsAdmin(context, configuration)) return Unauthorized();
+    if (!context.Request.HasJsonContentType() ||
+        context.Features.Get<IHttpRequestBodyDetectionFeature>() is { CanHaveBody: false })
+        return Error(400, "BadRequest", "JSON 시나리오 본문이 필요합니다.");
+    ScenarioRequest? request;
+    try { request = await context.Request.ReadFromJsonAsync<ScenarioRequest>(context.RequestAborted); }
+    catch (JsonException) { return Error(400, "BadRequest", "name 형식을 확인해 주세요."); }
+    catch (BadHttpRequestException) { return Error(400, "BadRequest", "시나리오 본문을 읽을 수 없습니다."); }
+    if (request?.Name is null) return Error(400, "BadRequest", "시나리오 이름이 필요합니다.");
+    if (ExperimentCache.ScenarioName(request.Name) is not { } scenario)
+        return Error(400, "UnknownScenario", "알 수 없는 시나리오입니다.");
+    await market.SelectScenario(scenario, context.RequestAborted);
+    return Results.Ok(new { ok = true });
+});
 app.MapPost("/api/admin/crash", async (HttpContext context, MarketLoop market, IConfiguration configuration) =>
 {
-    var key = configuration["Market:AdminKey"];
-    if (string.IsNullOrWhiteSpace(key) || !context.Request.Headers.TryGetValue("X-Admin-Key", out var headers) ||
-        headers.Count != 1 || !CryptographicOperations.FixedTimeEquals(
-            SHA256.HashData(Encoding.UTF8.GetBytes(key)), SHA256.HashData(Encoding.UTF8.GetBytes(headers[0]!))))
-        return Error(401, "Unauthorized", "유효한 관리자 키가 필요합니다.");
+    if (!IsAdmin(context, configuration)) return Unauthorized();
     await market.Crash(context.RequestAborted);
     return Results.Ok(new { ok = true });
 });
@@ -71,6 +89,16 @@ app.Run();
 static IResult Error(int status, string error, string message) => Results.Json(new { error, message }, statusCode: status);
 static IResult MissingOrder() => Error(404, "NotFound", "주문을 찾을 수 없습니다.");
 
+static IResult Unauthorized() => Error(401, "Unauthorized", "유효한 관리자 키가 필요합니다.");
+static bool IsAdmin(HttpContext context, IConfiguration configuration)
+{
+    var key = configuration["Market:AdminKey"];
+    return !string.IsNullOrWhiteSpace(key) && context.Request.Headers.TryGetValue("X-Admin-Key", out var headers) &&
+        headers.Count == 1 && CryptographicOperations.FixedTimeEquals(
+            SHA256.HashData(Encoding.UTF8.GetBytes(key)), SHA256.HashData(Encoding.UTF8.GetBytes(headers[0]!)));
+}
+
+internal sealed record ScenarioRequest(string? Name);
 internal sealed record PlaceRequest(string? Side,
     [property: JsonNumberHandling(JsonNumberHandling.Strict)] long? Price,
     [property: JsonNumberHandling(JsonNumberHandling.Strict)] long? Quantity);
