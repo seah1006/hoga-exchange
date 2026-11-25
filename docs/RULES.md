@@ -95,9 +95,15 @@
 
 | 규칙 ID | 코드 위치 | 테스트 |
 |---|---|---|
-| R-TICK-01 | (TASK-001) | |
-| R-TICK-02 | (TASK-001) | |
-| R-LIMIT-01~04 | (TASK-001) | |
-| R-MATCH-01~04 | (TASK-001) | |
+| R-TICK-01 | `TickSizeTable.GetTickSize` | `PriceRuleTests.Tick_boundaries` |
+| R-TICK-02 | `TickSizeTable.IsOnTick`, `MatchingEngine.Place` | `PriceRuleTests.Tick_boundaries`, `MatchingTests.Rejects_invalid_placement`, `InvariantTests.I2_trades_use_valid_prices` |
+| R-LIMIT-01 | `PriceLimits.Compute` | `PriceRuleTests.Specified_limit_examples`, `PriceRuleTests.Max_base_price_computes_without_overflow` |
+| R-LIMIT-02 | `PriceLimits.Compute` | `PriceRuleTests.Specified_limit_examples` |
+| R-LIMIT-03 | `PriceLimits.Compute` | `PriceRuleTests.Specified_limit_examples` |
+| R-LIMIT-04 | `MatchingEngine.Place` | `MatchingTests.Rejects_invalid_placement`, `MatchingTests.Accepts_orders_at_both_limits`, `InvariantTests.I2_trades_use_valid_prices` |
+| R-MATCH-01 | `MatchingEngine.Place` | `MatchingTests.Better_price_trades_first_at_resting_price` |
+| R-MATCH-02 | `MatchingEngine.Place` | `MatchingTests.Partial_fill_keeps_priority_and_large_order_sweeps_multiple_levels`, `InvariantTests.I4_trades_take_the_earliest_resting_order_at_each_price` |
+| R-MATCH-03 | `MatchingEngine.Place` | `MatchingTests.Better_price_trades_first_at_resting_price` |
+| R-MATCH-04 | `MatchingEngine.Place` | `MatchingTests.Partial_fill_keeps_priority_and_large_order_sweeps_multiple_levels`, `BookTests.Book_and_queue_reflect_partial_fill_and_cancellation` |
 | R-AUCT-01~05 | (TASK-002) | |
 | R-VI-01~05 | (TASK-002) | |
