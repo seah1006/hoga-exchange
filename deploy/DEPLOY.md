@@ -12,7 +12,9 @@ Oracle Ubuntu 24.04 x64, Docker·Caddy·2GB swap이 이미 설치된 골목장�
 
    ```diff
    +hoga-158-180-72-47.sslip.io {
-   +    reverse_proxy hoga:8080
+   +    @metrics path /metrics /metrics/ /metrics/*
++    respond @metrics 404
++    reverse_proxy hoga:8080
    +}
    ```
 
@@ -36,7 +38,7 @@ Oracle Ubuntu 24.04 x64, Docker·Caddy·2GB swap이 이미 설치된 골목장�
 
 ## 업데이트·되돌리기
 
-- 업데이트는 4·5번 반복. 이전 릴리스의 Compose와 이미지 태그를 보관한다(태그는 `hoga-exchange:<release>`). 동일 `-p hoga` 프로젝트와 `hoga_journal` 볼륨을 쓴다.
+- 업데이트는 4·5번 반복. 이전 릴리스의 Compose와 이미지 태그를 보관한다(태그는 `hoga-exchange:<release>`). 동일 `-p hoga` 프로젝트와 기존 `hoga_journal`, 신규 `hoga_data` 볼륨을 쓴다. 이전 Compose로 롤백하면 신규 볼륨이 마운트되지 않을 수 있지만 삭제하면 안 된다.
 - 이전 릴리스로 되돌릴 때 서버 `~/hoga`에서 실행한다. 저널의 역호환성이 전제다. 저널 형식이 다르면 원본 볼륨을 삭제하지 말고 별도 복구를 계획한다.
 
   ```sh
@@ -51,3 +53,50 @@ Oracle Ubuntu 24.04 x64, Docker·Caddy·2GB swap이 이미 설치된 골목장�
 ## 로컬 리허설 재현
 
 `-BuildOnly`로 생성한 이미지 태그를 `HOGA_IMAGE`에, 전용 브리지 이름을 `HOGA_EDGE_NETWORK`에, 그 사설 IPv4 CIDR을 `HOGA_EDGE_IPV4_SUBNET`에 설정한다. `Market__AdminKey`는 셸의 환경 변수로만 난수 생성한다. 전용 네트워크에만 별도 Caddy를 붙여 `/healthz`와 정적 자산을 확인한다(로컬 5292, 임의 지정). 골목장부의 네트워크, 볼륨은 건드리지 않는다. `docker stats --no-stream`의 앱 메모리와 현재 저널의 `place-limit/v1` 행을 30초 간격으로 센다. 시나리오 전 평상시 신규 주문 수의 차이를 경과 시간으로 나눈다. 검증 후 리허설 Compose 프로젝트에만 `down -v`를 실행하고 별도 앱 이미지와 브리지를 제거한다. 수치는 `docs/tasks/TASK-007-PROGRESS.md`에 기록했다.
+
+## CI 및 공개 장애 알림
+
+- `CI`: push/PR마다 Ubuntu에서 .NET 10 경고를 오류로 빌드하고 `tests/*/*.csproj`만 실행(벤치마크 실행 제외)한다. 별도 잡에서 Node 24 LTS(메이저 고정, 임의 지정)로 `npm ci`, lint, test, build를 수행한다. NuGet/npm 다운로드 캐시를 사용하고 Actions 잡 요약에 테스트 수를 표시한다.
+- `Public uptime`: 기본 브랜치에서 매시 17분·47분 UTC(30분 간격, 임의 지정) 실행하며 수동 실행도 가능하다. 호가 `https://hoga-158-180-72-47.sslip.io/healthz`, 골목장부 `https://sss-158-180-72-47.sslip.io/api/health/db`가 기본값이다. 필요하면 저장소 변수 `HOGA_HEALTH_URL`, `SSS_HEALTH_URL`로 각각 덮어쓴다. URL에 자격 증명을 넣지 않는다. 각 HTTPS 요청의 타임아웃은 10초(임의 지정)이며 2xx만 정상이다.
+- 기본 `GITHUB_TOKEN`에 워크플로의 `issues: write` 권한만 부여한다. 실패 서비스별로 `outage` 라벨의 봇 이슈를 생성하고 이후 실패는 같은 이슈에 댓글을 남긴다. 복구하면 복구 댓글 후 자동으로 닫는다. Actions 예약 실행은 지연될 수 있으므로 즉시 장애 통보를 보장하지 않는다. GitHub 알림 수신 여부는 사용자의 저장소 구독 설정에 따른다.
+
+## 메트릭과 로그
+
+- 공개 Caddy는 `/metrics`를 관리자 키 유무와 관계없이 404로 차단한다. 앱은 프록시를 거치지 않은 직접 루프백(전달 헤더 없음) 또는 `X-Admin-Key` 검증 성공 요청에만 응답한다. Docker 사설망 전체를 신뢰하지 않는다. 배포 시 기존 호가 사이트 블록에도 위 차단 규칙을 반영한다.
+- 서버 내부에서만 다음처럼 확인한다(아래 `compose`는 해당 릴리스의 `--env-file .env -p hoga -f …` 옵션을 포함한다). 키 없이 컨테이너 루프백을 사용한다.
+
+  ```sh
+  docker compose --env-file .env -p hoga -f "releases/$release/docker-compose.hoga.yml" exec -T hoga bash -ec '
+    exec 3<>/dev/tcp/127.0.0.1/8080
+    printf "GET /metrics HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3
+    cat <&3
+  '
+  ```
+
+- `hoga_orders_accepted_total`, `hoga_orders_rejected_total{reason=…}`, `hoga_trades_total`은 라이브 엔진의 신규 주문·체결 기준이다(봇 포함, 과거 저널 재생 및 HTTP 요청 단계의 검증 실패 제외). `hoga_market_queue_length`는 대기열, `hoga_connections`는 SignalR 연결 수, `hoga_process_working_set_bytes`는 RSS다. `hoga_market_processing_seconds` 히스토그램은 `journal`과 `engine`을 분리한다. 카운터는 프로세스 재시작 시 0부터 센다.
+- Production 콘솔은 JSON이며 요청 로그에는 코드에 정의된 라우트 템플릿(일치하지 않으면 `(unmatched)`), 상태 코드, 지연(ms), 인증 사용자 ID SHA-256 앞 12자리(임의 지정)만 기록한다. 쿼리·본문·헤더·원본 경로는 기록하지 않으며 프레임워크 로그에 의한 우회 노출을 막기 위해 운영 범주만 허용한다. `docker compose … logs --tail=50 hoga`로 확인하되 로그에 환경 변수나 인증 데이터를 함께 출력하지 않는다. 프록시 접근 로그를 추가할 때도 별도로 같은 원칙을 적용한다.
+
+## 볼륨과 백업
+
+- `hoga_data:/data`는 SQLite `/data/hoga.db`, Data Protection 키용 `/data/keys`(TASK-011에서 연결), 백업 `/data/backups`를 보관한다. 기존 `hoga_journal:/data/journal`을 중첩 마운트해 현재 저널을 그대로 쓴다. 첫 적용 전 볼륨 이름과 컨테이너 `app` 사용자의 쓰기 권한을 확인하고, `down -v`나 기존 저널 볼륨 이름 변경은 금지한다.
+- 앱 시작 시와 정기 초기화 성공 직후 한 번씩, 서울 날짜 기준 `hoga-YYYYMMDD.db`를 만든다. 같은 날짜는 완성된 스냅샷으로 원자 교체한다. 최근 날짜 7개를 보관(임의 지정)한다. DB가 없으면 로그만 남긴다. **TASK-011 온라인 공급자 연결 전 운영에서는 스냅샷을 생성하지 않는다.** `Operations:AllowOfflineDatabaseCopy`는 종료된 SQLite 복제본을 사용하는 로컬 테스트 전용이며 운영에서 켜면 안 된다.
+- 최근 백업을 PC의 접근 제한된 디렉터리에 가져오려면 신뢰된 호스트 키를 `known_hosts`에 등록한 뒤 다음 명령을 쓴다. 서버의 임시 사본은 완료/실패 후 제거를 시도한다. SQLite에는 이메일 등 개인정보가 포함되므로 별도 암호화 저장·접근 제한이 필요하다. SQLite 스냅샷만 내려받으며 저널과 키는 별도 관리 대상이다.
+
+  ```powershell
+  pwsh ./deploy/pull_backup.ps1 -Server '<계정>@<호스트>' -Key '<SSH 키 파일 경로>' -Destination '<보안 디렉터리>'
+  ```
+
+### 복원 절차 (메인 에이전트 전용)
+
+1. 배포 대상·날짜를 확인하고 원본 백업을 복제해 격리 환경에서 `sqlite3 -readonly <백업파일> 'PRAGMA integrity_check;'` 결과 `ok`와 앱/DB 스키마 호환성을 확인한다. SQLite 백업은 저널·키의 백업이 아니다. 재생 세대·로그인 세션까지 되돌려야 한다면 해당 시점의 저널과 키 보존 상태를 따로 확인한다.
+2. 점검 시간에 Hoga 서비스만 `docker compose … stop hoga`로 중단한다. 골목장부는 건드리지 않는다. 같은 Compose의 `run --rm --no-deps --user 0 --entrypoint sh hoga`로 일회성 컨테이너를 열어 `/data` 전체(중첩 저널 포함)를 별도 비공개 위치에 보존한다. 실제 DB와 `-wal`, `-shm`, `-journal` 사이드카는 같은 세트로 보존한다. 검증한 백업이 볼륨에 없다면 제한된 임시 위치에 업로드한 뒤 `docker cp`로 해당 컨테이너에만 옮긴다.
+3. 서비스가 정지한 상태에서 확인된 스냅샷을 `/data/.hoga-restore.db`로 복사하고 이미지의 `app` 사용자 소유·권한 0600으로 설정한다. 이전 사이드카를 보존 위치로 옮긴 뒤 임시 파일을 같은 파일시스템의 `/data/hoga.db`로 rename한다. 실패한 경우 기동하지 말고 보존한 DB/사이드카 세트를 함께 복원한다.
+4. `docker compose … up -d --wait --wait-timeout 120 hoga`로 Hoga만 재기동하고 `/healthz`, DB 무결성, 라운드 조회, 로그인, 골목장부 헬스를 확인한다. 실패하면 다시 정지하고 보존한 데이터·릴리스로 되돌린다. 성공 후 불필요한 임시 개인정보 사본을 정리한다.
+
+## CD 초안 (문서만, 비활성)
+
+1. 버전 태그 `v*` push(패턴 임의 지정)가 통합 `main`의 CI 통과 커밋을 가리킬 때만 Ubuntu에서 .NET 10/Node 24로 동일 테스트를 수행하고 Linux x64 이미지와 Compose를 만든다. 배포 산출물은 불변 태그/다이제스트 및 체크섬으로 식별한다. 현재 수동 경로에 맞춰 이미지 tar와 Compose를 전달하면 별도 레지스트리 자격 증명이 필요 없다.
+2. 별도 배포 잡은 승인 필수 production Environment와 동시 배포 잠금을 적용한다(설계안). 최소 권한 전용 SSH 계정, 서버 호스트 키 핀, 저장소/환경 비밀값의 전용 SSH 키가 필요하다. GitHub의 임시 키 파일과 서버의 임시 전송물은 정리하고 키·서버 `.env`는 절대 잡 로그/산출물에 포함하지 않는다. 서버에서 `docker load` 후 기존 `-p hoga` 및 볼륨으로 Hoga만 갱신한다.
+3. Compose health와 두 공개 헬스를 이전 기준선과 비교한다. 실패하면 이전 호환 이미지·Compose를 사용하고, DB 스키마가 역호환되지 않으면 자동 복원을 하지 않고 운영자가 수동 대응한다. Caddy/골목장부는 CD 범위에 포함하지 않는다.
+
+**사용자 결정 필요:** CD 활성화 여부, 전용 SSH 계정/키 발급 및 GitHub Environment secret 등록 허용 여부, 배포 승인자와 태그·릴리스 정책을 정한다. 결정 전에는 실행 가능한 배포 워크플로, 저장소 설정 또는 운영 서버를 변경하지 않는다.

@@ -1,3 +1,5 @@
 hoga-158-180-72-47.sslip.io {
+	@metrics path /metrics /metrics/ /metrics/*
+	respond @metrics 404
 	reverse_proxy hoga:8080
 }

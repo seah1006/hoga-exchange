@@ -2,11 +2,15 @@ using System.Text.Json;
 using System.Threading.RateLimiting;
 using Hoga.Bots;
 using Hoga.Server;
+using Hoga.Server.Operations;
+using static Hoga.Server.Operations.OperationsRegistration;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddOperations();
 builder.Services.AddOptions<MarketOptions>().BindConfiguration("Market")
     .Validate(o => o.Speed is >= 1 and <= 1000 && o.RequestTimeoutMs > 0 && o.BasePrice > 0 &&
         o.BotIntensity is >= 0 and <= 1 && (string.IsNullOrEmpty(o.DailyResetLocalTime) ||
@@ -46,11 +50,14 @@ builder.Services.AddHostedService(services => services.GetRequiredService<Market
 builder.AddMembers();
 var app = builder.Build();
 if (await app.InitializeMembers(args)) return;
+app.CaptureMetricsPeer();
 app.UseWhen(context => context.Connection.RemoteIpAddress is not null, branch => branch.UseForwardedHeaders());
 app.UseRouting();
+app.UseMiddleware<SafeRequestLog>();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+app.MapOperations();
 
 app.Use(async (context, next) =>
 {
