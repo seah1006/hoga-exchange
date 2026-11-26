@@ -50,7 +50,7 @@ export function MemberOrders({ source, book, price, onPrice, showAccount, online
     }
     refresh.current = () => load(true)
     const unsubscribe = source.subscribe((message) => {
-      if (message.type !== 'accountUpdate') return
+      if (!live || message.type !== 'accountUpdate') return
       accountVersion++
       setAccount({ value: message.data, error: '' })
       timer ??= setTimeout(() => { timer = undefined; load(false) }, 200)
@@ -103,7 +103,7 @@ export function MemberOrders({ source, book, price, onPrice, showAccount, online
   }
   const detail = details?.id === selected ? details : undefined
   return <div className="stack">
-    {showAccount && <AccountPanel account={account.value} error={account.error} retry={() => refresh.current()} />}
+    {showAccount && <AccountPanel account={account.value} lastPrice={book.lastPrice} error={account.error} retry={() => refresh.current()} />}
     <section className="panel order-entry"><h2>주문창</h2><p className="muted round-help">{roundNotice}</p>
       {!online && <p className="muted">시세 연결 후 주문할 수 있습니다.</p>}
       {!showAccount && account.error && <p role="alert" className="error">{account.error} <button onClick={() => refresh.current()}>다시 시도</button></p>}

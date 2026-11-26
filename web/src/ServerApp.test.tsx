@@ -11,16 +11,19 @@ vi.mock('./CandleChart', () => ({ CandleChart: ({ candles }: { candles: Candle[]
 afterEach(() => { cleanup(); sessionStorage.clear(); vi.useRealTimers() })
 
 const resting: AccountOrder = { orderId: 'o-123', side: 'Buy', price: 10_000, quantity: 100, filledQuantity: 0, remainingQuantity: 100, status: 'Resting', createdAtMs: 0 }
-function setup(isAdmin = false) {
+function setup(isAdmin = false, stallCsrfRenewal = false) {
   const hub = new FakeHub()
   const fetcher = vi.fn<typeof fetch>()
   let orders: AccountOrder[] = []
+  let csrfRequests = 0
   const account = { ...members.account, cash: 20_000_000_000 }
   const accountRequests = vi.fn(() => Response.json(orders))
   const request: typeof fetch = async (input, init) => {
     switch (String(input)) {
-      case '/api/auth/me': return Response.json({ ...members.profile, isAdmin })
-      case '/api/auth/csrf': return Response.json({ token: 'fixture' })
+      case '/api/auth/me': if (init?.method === 'GET') return Response.json({ ...members.profile, isAdmin }); break
+      case '/api/auth/csrf':
+        if (stallCsrfRenewal && ++csrfRequests > 1) return new Promise(() => {})
+        return Response.json({ token: 'fixture' })
       case '/api/account': return Response.json(account)
       case '/api/account/orders': return accountRequests()
       case '/api/account/trades': return Response.json([])
@@ -263,4 +266,42 @@ test.each([['InsufficientCash', '매수 가능 현금이 부족합니다.'], ['I
   if (reason === 'InsufficientShares') fireEvent.click(screen.getByRole('button', { name: '매도' }))
   fireEvent.click(screen.getByRole('button', { name: reason === 'InsufficientShares' ? '매도 주문' : '매수 주문' }))
   expect((await screen.findByRole('alert')).textContent).toContain(message)
+})
+
+test('타인 체결로 시세만 바뀌면 묶인 현금과 주식을 포함해 계좌 평가를 다시 계산한다', async () => {
+  const { book, showBook, emit, accountRequests } = setup()
+  showBook({ ...book, lastPrice: 9_450 })
+  await screen.findByText('주문 가능 현금')
+  const account = within(screen.getByRole('region', { name: '내 계좌' }))
+  emit('accountUpdate', { ...members.account, sharesOnHold: 10, lastPrice: 9_450, valuation: 19_989_500, pnl: -10_500, returnBp: -5 })
+  expect(account.getByText('19,989,500원')).toBeDefined()
+  expect(account.getByText('-0.05%')).toBeDefined()
+  const before = accountRequests.mock.calls.length
+
+  showBook({ ...book, seq: book.seq + 1, lastPrice: 9_380 })
+  expect(account.getByText('19,911,800원')).toBeDefined()
+  expect(account.getByText('-88,200원')).toBeDefined()
+  expect(account.getByText('-0.44%')).toBeDefined()
+  expect(account.queryByText('19,989,500원')).toBeNull()
+  expect(accountRequests).toHaveBeenCalledTimes(before)
+})
+
+test.each(['로그아웃', '탈퇴'])('%s 성공 시 토큰 재발급을 기다리지 않고 계좌와 내 주문을 비운다', async (action) => {
+  const { book, emit, fetcher, showBook, setOrders } = setup(false, true)
+  setOrders([resting])
+  showBook(book)
+  await screen.findByRole('button', { name: 'o-123 취소' })
+  expect(screen.getByRole('region', { name: '내 계좌' })).toBeDefined()
+  fetcher.mockResolvedValueOnce(new Response(null, { status: 204 }))
+  fireEvent.click(screen.getByText(members.profile.nickname))
+  fireEvent.click(screen.getByRole('button', { name: action }))
+  if (action === '탈퇴') {
+    fireEvent.change(screen.getByLabelText('비밀번호'), { target: { value: crypto.randomUUID() } })
+    fireEvent.click(screen.getByRole('button', { name: '탈퇴하기' }))
+  }
+  await screen.findByText('로그인하면 주문할 수 있습니다')
+  emit('accountUpdate', members.account)
+  expect(screen.queryByRole('region', { name: '내 계좌' })).toBeNull()
+  expect(screen.queryByRole('heading', { name: '내 주문' })).toBeNull()
+  expect(screen.queryByRole('table', { name: '내 체결 내역' })).toBeNull()
 })
