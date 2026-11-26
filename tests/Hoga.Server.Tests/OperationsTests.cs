@@ -168,45 +168,48 @@ public sealed class OperationsTests
     }
 
     [Fact]
-    public async Task BackupRetainsSevenSeoulDatesAndCopiesCommittedWalRows()
+    public async Task OnlineSnapshotCopiesCommittedWalRows()
     {
-        using var logs = new LogCapture();
         using var app = new OperationsFactory();
-        using var environmentHost = new OperationsFactory();
-        var environment = environmentHost.Services.GetRequiredService<IWebHostEnvironment>();
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        { ["Market:DatabasePath"] = app.Database, ["Operations:BackupDirectory"] = app.Backups }).Build();
-        using var loggerFactory = LoggerFactory.Create(b => b.AddProvider(logs));
-        using var service = new BackupService(configuration, environment, TimeProvider.System,
-            new OnlineSqliteSnapshot(), loggerFactory.CreateLogger<BackupService>());
-        var earliest = DateTimeOffset.Parse("2026-11-01T15:30:00Z", CultureInfo.InvariantCulture);
-        await service.RunOnce(earliest);
-        Assert.False(Directory.Exists(app.Backups));
-        Assert.Contains(logs.Entries, entry => entry.Text.Contains("database missing", StringComparison.Ordinal));
-
         using var source = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = app.Database, Pooling = false }.ToString());
         source.Open();
         using var command = source.CreateCommand();
         command.CommandText = "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE checks (value INTEGER); INSERT INTO checks VALUES (42);";
         command.ExecuteNonQuery();
         Assert.True(File.Exists(app.Database + "-wal"));
-        for (var i = 0; i < 9; i++) await service.RunOnce(earliest.AddDays(i));
-        var actual = Directory.GetFiles(app.Backups).Order(StringComparer.Ordinal).ToArray();
-        Assert.Equal(7, actual.Length);
-        Assert.Equal("hoga-20261104.db", Path.GetFileName(actual[0]));
-        Assert.Equal("hoga-20261110.db", Path.GetFileName(actual[^1]));
-        using (var restored = new SqliteConnection(new SqliteConnectionStringBuilder
-            { DataSource = actual[^1], Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString()))
+        var destination = app.Database + ".snapshot";
+        Assert.True(await new OnlineSqliteSnapshot().Copy(app.Database, destination, default));
+        using var restored = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = destination, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
+        restored.Open();
+        using var read = restored.CreateCommand();
+        read.CommandText = "PRAGMA integrity_check;";
+        Assert.Equal("ok", read.ExecuteScalar());
+        read.CommandText = "SELECT value FROM checks;";
+        Assert.Equal(42L, read.ExecuteScalar());
+    }
+
+    [Fact]
+    public async Task Review8ProductionHeadersAndHubOriginPolicy()
+    {
+        using var app = new OperationsFactory();
+        using var client = app.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        { BaseAddress = new Uri("https://localhost") });
+        using var health = await client.GetAsync("/healthz");
+        Assert.Equal("max-age=31536000", Assert.Single(health.Headers.GetValues("Strict-Transport-Security")));
+        Assert.Equal("DENY", Assert.Single(health.Headers.GetValues("X-Frame-Options")));
+        Assert.Equal("nosniff", Assert.Single(health.Headers.GetValues("X-Content-Type-Options")));
+        Assert.Equal("strict-origin-when-cross-origin", Assert.Single(health.Headers.GetValues("Referrer-Policy")));
+        Assert.Contains("default-src 'self'", Assert.Single(health.Headers.GetValues("Content-Security-Policy")));
+        foreach (var (origin, expected) in new[] { ("https://localhost", HttpStatusCode.OK),
+                     ("https://alternate.invalid", HttpStatusCode.OK), ("https://denied.invalid", HttpStatusCode.Forbidden),
+                     ("null", HttpStatusCode.Forbidden) })
         {
-            restored.Open();
-            using var read = restored.CreateCommand();
-            read.CommandText = "PRAGMA integrity_check;";
-            Assert.Equal("ok", read.ExecuteScalar());
-            read.CommandText = "SELECT value FROM checks;";
-            Assert.Equal(42L, read.ExecuteScalar());
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/hubs/market/negotiate?negotiateVersion=1");
+            request.Headers.Add("Origin", origin);
+            using var response = await client.SendAsync(request);
+            Assert.Equal(expected, response.StatusCode);
         }
-        await service.RunOnce(earliest.AddDays(8));
-        Assert.Equal(actual, Directory.GetFiles(app.Backups).Order(StringComparer.Ordinal));
     }
 
     private sealed class OperationsFactory(LogCapture? logs = null) : WebApplicationFactory<Program>
@@ -220,7 +223,7 @@ public sealed class OperationsTests
             {
                 ["Market:AdminKey"] = Key, ["Market:JournalPath"] = Path.Combine(_directory, "journal.jsonl"),
                 ["Market:DatabasePath"] = Database, ["Market:TrustedProxyNetwork"] = "172.18.0.0/24", ["Market:Bots"] = "false",
-                ["Operations:BackupDirectory"] = Backups, ["Market:KeysPath"] = Path.Combine(_directory, "keys")
+                ["Market:AllowedHubOrigins:0"] = "https://alternate.invalid", ["Operations:BackupDirectory"] = Backups, ["Market:KeysPath"] = Path.Combine(_directory, "keys")
             })).ConfigureLogging(logging => { if (logs is not null) logging.AddProvider(logs); });
 
         protected override void Dispose(bool disposing)

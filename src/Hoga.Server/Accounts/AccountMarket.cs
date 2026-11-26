@@ -1,3 +1,4 @@
+using Hoga.Server.Operations;
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
@@ -17,7 +18,28 @@ internal sealed partial class MarketLoop
     private string RoundPath => _path + "." + Generation + ".round";
     private sealed record RoundMetadata(string Round, long InitialCash, long InitialShares);
 
-    private void LoadRound(DateTimeOffset now)
+    internal Task<BackupCheckpoint> CaptureBackup(ISqliteSnapshot snapshot, string dbStage, CancellationToken ct) => Invoke(async () =>
+    {
+        var checkpoint = new BackupCheckpoint();
+        try
+        {
+            using var scope = scopes.CreateScope();
+            var paths = scope.ServiceProvider.GetRequiredService<Members.StoragePaths>();
+            // Capture a committed SQLite image at the same market command boundary as the journal cut.
+            if (!await snapshot.Copy(paths.Database, dbStage, ct)) throw new IOException("SQLite backup unavailable.");
+            checkpoint.Add("journal/market.jsonl", _path);
+            checkpoint.Add("journal/market.jsonl." + Generation + ".round", RoundPath);
+            foreach (var path in Directory.EnumerateFiles(Path.GetDirectoryName(_path)!, "market-????????-??????.jsonl"))
+                if (DateTime.TryParseExact(Path.GetFileName(path), "'market-'yyyyMMdd-HHmmss'.jsonl'", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+                    checkpoint.Add("journal/" + Path.GetFileName(path), path);
+            foreach (var path in Directory.EnumerateFiles(paths.Keys, "*.xml"))
+                checkpoint.Add("keys/" + Path.GetFileName(path), path);
+            return checkpoint;
+        }
+        catch { await checkpoint.DisposeAsync(); throw; }
+    }, ct, readOnly: true, waitForCompletion: true);
+
+    private void LoadRound(DateTimeOffset now, bool restoring = false)
     {
         RoundMetadata metadata;
         if (File.Exists(RoundPath))
@@ -26,11 +48,19 @@ internal sealed partial class MarketLoop
         else
         {
             var options = configuration.Value;
+            if (restoring && !options.AllowMissingRoundMetadata)
+                throw new InvalidDataException("Existing journal has no matching .round metadata.");
+            if (restoring) logger.LogWarning("Missing .round metadata explicitly reconstructed from current settings");
             metadata = new(RoundAt(now), options.InitialCash, options.InitialShares);
             var staged = RoundPath + ".tmp";
             File.WriteAllText(staged, JsonSerializer.Serialize(metadata));
             File.Move(staged, RoundPath);
         }
+        var initialValue = (Int128)metadata.InitialCash + (Int128)metadata.InitialShares * _header.BasePrice;
+        if (!DateOnly.TryParseExact(metadata.Round, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _) ||
+            metadata.InitialCash < 0 || metadata.InitialShares < 0 ||
+            initialValue <= 0 || initialValue > long.MaxValue)
+            throw new InvalidDataException("Invalid .round metadata.");
         _round = metadata.Round;
         _ledger = new(metadata.InitialCash, metadata.InitialShares, _header.BasePrice);
     }
@@ -47,6 +77,16 @@ internal sealed partial class MarketLoop
     internal Task<RankingSnapshot> Ranking(CancellationToken ct) => Read(() => _ranking, ct);
     internal Task<bool> Unsubscribe(string id) => Read(() => _online.Remove(id), CancellationToken.None);
 
+    internal Task<bool> RevokeAccountSubscriptions(string id) => Invoke(() =>
+    {
+        RevokeAccount(id);
+        return ValueTask.FromResult(true);
+    }, CancellationToken.None, readOnly: true, waitForCompletion: true);
+    private void RevokeAccount(string id)
+    {
+        foreach (var key in _online.Where(p => p.Value == id).Select(p => p.Key).ToArray()) _online.Remove(key);
+    }
+
     private async Task PublishAccount(string id)
     {
         var connections = _online.Where(p => p.Value == id).Select(p => p.Key).ToArray();
@@ -54,7 +94,7 @@ internal sealed partial class MarketLoop
         using var send = CancellationTokenSource.CreateLinkedTokenSource(_stopping);
         send.CancelAfter(TimeSpan.FromSeconds(1));
         try { await hub.Clients.Clients(connections).SendAsync("accountUpdate", AccountView(id), send.Token); }
-        catch (Exception ex) { logger.LogWarning(ex, "Account update delivery failed"); }
+        catch (Exception ex) { logger.LogWarning("Account update delivery failed ({FailureType})", ex.GetType().Name); }
     }
     private void RefreshRanking(DateTimeOffset now)
     {

@@ -54,6 +54,32 @@ if (await app.InitializeMembers(args)) return;
 app.CaptureMetricsPeer();
 app.UseWhen(context => context.Connection.RemoteIpAddress is not null, branch => branch.UseForwardedHeaders());
 app.UseRouting();
+var allowedOrigins = app.Configuration.GetSection("Market:AllowedHubOrigins").Get<string[]>() ?? [];
+if (allowedOrigins.Any(origin => !ValidOrigin(origin)))
+    throw new InvalidOperationException("Market:AllowedHubOrigins must contain HTTP(S) origins without paths.");
+app.Use(async (context, next) =>
+{
+    if (app.Environment.IsProduction())
+    {
+        var headers = context.Response.Headers;
+        if (context.Request.IsHttps) headers.StrictTransportSecurity = "max-age=31536000";
+        headers.ContentSecurityPolicy = "default-src 'self'; connect-src 'self' wss: ws:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+        headers.XFrameOptions = "DENY";
+        headers.XContentTypeOptions = "nosniff";
+        headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    }
+    if (context.Request.Path.StartsWithSegments("/api/auth")) context.Response.Headers.CacheControl = "no-store";
+    if (context.Request.Path.StartsWithSegments("/hubs/market") &&
+        context.Request.Headers.TryGetValue("Origin", out var origins) &&
+        (origins.Count != 1 || origins[0] is not { } origin || !ValidOrigin(origin) ||
+         !(context.Request.Scheme + "://" + context.Request.Host.Value).Equals(origin, StringComparison.OrdinalIgnoreCase) &&
+         !allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase)))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return;
+    }
+    await next(context);
+});
 app.UseMiddleware<SafeRequestLog>();
 app.Use(async (context, next) =>
 {
@@ -136,6 +162,10 @@ app.MapGet("/api/experiments/{id}", async (string id, ExperimentCache experiment
 });
 app.MapHub<MarketHub>("/hubs/market");
 app.Run();
+
+static bool ValidOrigin(string value) => Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+    uri.Scheme is "http" or "https" && string.Equals(uri.GetLeftPart(UriPartial.Authority), value, StringComparison.OrdinalIgnoreCase) &&
+    uri.UserInfo.Length == 0;
 
 static RateLimitPartition<string> PerIp(HttpContext context, TimeSpan window, int permits)
 {

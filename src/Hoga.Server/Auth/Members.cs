@@ -28,7 +28,7 @@ internal static partial class Members
             (Int128)o.InitialCash + (Int128)o.InitialShares * o.BasePrice <= long.MaxValue,
             "시작 자산의 평가액이 올바르지 않습니다.");
         builder.Services.AddDbContext<MarketDb>((services, options) => options.UseSqlite(new SqliteConnectionStringBuilder
-        { DataSource = services.GetRequiredService<StoragePaths>().Database }.ToString()));
+        { DataSource = services.GetRequiredService<StoragePaths>().Database, DefaultTimeout = 1, ForeignKeys = true }.ToString()).AddInterceptors(SqliteBusyTimeout.Instance));
         builder.Services.AddDataProtection().SetApplicationName("Hoga.Server");
         builder.Services.AddOptions<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>()
             .Configure<StoragePaths, ILoggerFactory>((options, paths, logs) => options.XmlRepository =
@@ -43,6 +43,7 @@ internal static partial class Members
             options.Lockout.MaxFailedAccessAttempts = 5;
             options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(5);
         }).AddRoles<IdentityRole>().AddEntityFrameworkStores<MarketDb>();
+        builder.Services.AddSingleton(sp => new CredentialAttempts(new PasswordHasher<Member>(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PasswordHasherOptions>>())));
         builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme).AddIdentityCookies();
         builder.Services.AddAuthorization();
         builder.Services.ConfigureApplicationCookie(options =>
@@ -55,7 +56,17 @@ internal static partial class Members
                 var users = context.HttpContext.RequestServices.GetRequiredService<UserManager<Member>>();
                 var principal = context.Principal;
                 if (principal is null || await users.GetUserAsync(principal) is not { } member ||
-                    member.SecurityStamp != principal.FindFirstValue(users.Options.ClaimsIdentity.SecurityStampClaimType)) context.RejectPrincipal();
+                    member.SecurityStamp != principal.FindFirstValue(users.Options.ClaimsIdentity.SecurityStampClaimType))
+                { context.RejectPrincipal(); return; }
+                // Recheck security stamp and roles every request, including hub transport requests.
+                var roles = await users.GetRolesAsync(member);
+                if (principal.Identity is ClaimsIdentity identity && !identity.FindAll(identity.RoleClaimType)
+                    .Select(x => x.Value).ToHashSet(StringComparer.Ordinal).SetEquals(roles))
+                {
+                    context.ReplacePrincipal(await context.HttpContext.RequestServices
+                        .GetRequiredService<IUserClaimsPrincipalFactory<Member>>().CreateAsync(member));
+                    context.ShouldRenew = true;
+                }
             };
         });
         builder.Services.AddAntiforgery(options =>
@@ -65,14 +76,22 @@ internal static partial class Members
             options.Cookie.SameSite = SameSiteMode.Lax;
             options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
         });
-        builder.Services.AddRateLimiter(options => options.AddPolicy("signup", context =>
+        builder.Services.AddRateLimiter(options =>
         {
-            var ip = context.Connection.RemoteIpAddress;
-            if (ip?.IsIPv4MappedToIPv6 == true) ip = ip.MapToIPv4();
-            return RateLimitPartition.GetFixedWindowLimiter(ip?.ToString() ?? "unknown", _ => new()
-            { Window = TimeSpan.FromHours(1), PermitLimit = 10 }); // 임의 지정
-        }));
+            options.AddPolicy("signup", context => PerIp(context, TimeSpan.FromHours(1), 10));
+            options.AddPolicy("login", context => PerIp(context, TimeSpan.FromMinutes(1), 30));
+            options.AddPolicy("withdraw", context => PerIp(context, TimeSpan.FromMinutes(5), 20)); // 모두 임의 지정
+        });
     }
+    private static System.Net.IPAddress? ClientIp(HttpContext context)
+    {
+        var ip = context.Connection.RemoteIpAddress;
+        return ip?.IsIPv4MappedToIPv6 == true ? ip.MapToIPv4() : ip;
+    }
+    private static RateLimitPartition<string> PerIp(HttpContext context, TimeSpan window, int permits) =>
+        RateLimitPartition.GetFixedWindowLimiter(ClientIp(context)?.ToString() ?? "unknown", _ => new()
+        { Window = window, PermitLimit = permits, QueueLimit = 0 });
+
     internal static async Task<bool> InitializeMembers(this WebApplication app, string[] args)
     {
         using var scope = app.Services.CreateScope();
@@ -80,7 +99,18 @@ internal static partial class Members
         var paths = services.GetRequiredService<StoragePaths>();
         Directory.CreateDirectory(Path.GetDirectoryName(paths.Database)!);
         Directory.CreateDirectory(paths.Keys);
-        await services.GetRequiredService<MarketDb>().Database.MigrateAsync();
+        var db = services.GetRequiredService<MarketDb>();
+        await db.Database.MigrateAsync();
+        await db.Database.OpenConnectionAsync();
+        await using (var command = db.Database.GetDbConnection().CreateCommand())
+        {
+            command.CommandText = "PRAGMA journal_mode=WAL";
+            if (!string.Equals(await command.ExecuteScalarAsync() as string, "wal", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("SQLite WAL could not be enabled.");
+        }
+        await db.Database.CloseConnectionAsync();
+        await PruneAudits(db, services.GetRequiredService<TimeProvider>().GetUtcNow(), CancellationToken.None);
+        _ = services.GetRequiredService<CredentialAttempts>();
         if (args.FirstOrDefault() != "create-admin") return false;
         if (args is not [_, "--email", var email, "--nickname", var nickname])
         { Console.Error.WriteLine("사용법: create-admin --email <e> --nickname <n>"); Environment.ExitCode = 2; return true; }
@@ -97,6 +127,8 @@ internal static partial class Members
         Console.WriteLine("관리자 계정을 만들었습니다.");
         return true;
     }
+    internal static Task<int> PruneAudits(MarketDb db, DateTimeOffset now, CancellationToken ct) =>
+        db.LoginAudits.Where(a => a.AtUtc < now.UtcDateTime.AddDays(-30)).ExecuteDeleteAsync(ct); // 임의 지정
     private static string ReadPassword()
     {
         if (Console.IsInputRedirected) return Console.ReadLine() ?? "";

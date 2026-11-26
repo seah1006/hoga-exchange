@@ -7,7 +7,7 @@ internal sealed class Member : IdentityUser
     public string Nickname { get; set; } = null!;
     public string NormalizedNickname { get; set; } = null!;
 }
-internal sealed record LoginAudit(long Id, DateTime AtUtc, bool Succeeded, string IpPrefix);
+internal sealed record LoginAudit(long Id, DateTime AtUtc, bool Succeeded, string IpPrefix, string? MemberId);
 internal sealed class RoundResult
 {
     public string Generation { get; set; } = null!;
@@ -25,6 +25,8 @@ internal sealed class MarketDb(DbContextOptions<MarketDb> options) : IdentityDbC
         base.OnModelCreating(model);
         model.Entity<Member>().HasIndex(x => x.NormalizedNickname).IsUnique();
         model.Entity<LoginAudit>().HasKey(x => x.Id);
+        model.Entity<LoginAudit>().HasIndex(x => x.AtUtc);
+        model.Entity<LoginAudit>().HasOne<Member>().WithMany().HasForeignKey(x => x.MemberId).OnDelete(DeleteBehavior.Cascade);
         model.Entity<RoundResult>().HasKey(x => x.Generation);
         model.Entity<RoundResult>().HasIndex(x => x.Round);
         model.Entity<RoundResult>().HasMany(x => x.Entries).WithOne().HasForeignKey(x => x.Generation);
