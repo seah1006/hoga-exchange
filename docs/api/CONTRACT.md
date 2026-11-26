@@ -2,6 +2,7 @@
 
 변경 이력:
 - v0.5 통합 정정 (2026-11-26) 상태 해시에 `ledgerHash` 추가, 계좌 예시 및 주문 상태·관리자 인증 응답 명시.
+- v0.5.1 (2026-11-26, dev/service) 로그인 실패 응답 통일(`LockedOut` 제거), 로그인·탈퇴 시도 제한 429 (REVIEW-8).
 - v0.5 (2026-11-25, dev/service) 회원·세션·CSRF, 주문 로그인 필수와 소유권, 잔고 거부 사유, 계좌·내 주문·내 체결·랭킹 API, `accountUpdate` 메시지 (ADR 0005).
 - v0.4 (2026-11-25) 실험 요약 `GET /api/experiments/summary`, run의 `minAtMs`·`maxAtMs`, 시장 초기화 `POST /api/admin/reset`과 `marketReset` 메시지, `GET /healthz` 추가 (TASK-009, TASK-007). 모두 추가만 하고 기존 필드는 바꾸지 않는다.
 - v0.3 (2026-11-25) 관리자 헤더 `X-Admin-Key`, 주문 수량 서버 한도(400), 접속 직후 메시지 순서 추가 (REVIEW-5). 접속 직후 이력 재전송은 TASK-008에서 구현.
