@@ -79,7 +79,8 @@ npm run dev                         # http://localhost:5173, /api·/hubs는 5280
 ## 7. 서비스화 작업 (dev/service 브랜치, 발표 뒤 배포)
 - 사용자 결정(2026-11-25): 모의투자 서비스, 이메일+비밀번호, 매일 새 라운드(현금 1,000만 원 + 1,000주, 임의 지정), SQLite, 우선순위는 계정·주문 소유권 / 가상 계좌·손익·랭킹 / 운영 체계. 설계는 `docs/adr/0005-accounts-and-rounds.md`, 계약 v0.5 3장, 지시서 TASK-011(서버)·012(화면)·013(운영).
 - 발표 버전은 태그 `presentation-v1`, `main`과 공개 서버는 발표가 끝날 때까지 그대로 둔다.
-- **상태(2026-11-25 밤)**: 세 작업 모두 Codex 사용량 한도로 중간에 멈췄다. 진행분은 각 작업 브랜치에 `wip:` 커밋으로 보존(검증 전, 빌드·테스트 미확인). 사용자 결정으로 Codex 한도가 풀리면 같은 브랜치에서 이어서 한다.
+- **상태(2026-11-26)**: TASK-011·012·013 완료·통합, REVIEW-8(보안) 수정까지 dev/service에 병합. 빌드 경고 0, .NET 204개·화면 81개 통과, 브라우저로 가입·주문·정산·계좌·랭킹·390px 확인. **배포는 발표 뒤**(main 병합 → deploy_hoga.ps1). 배포 시 서버 ~/hoga/.env는 그대로, Compose에 /data 볼륨과 키 경로가 추가됐으니 deploy/DEPLOY.md의 백업·복원 절차를 먼저 읽는다.
+- (이전 기록) 2026-11-25 밤: 세 작업 모두 Codex 사용량 한도로 중간에 멈췄다. 진행분은 각 작업 브랜치에 `wip:` 커밋으로 보존(검증 전, 빌드·테스트 미확인). 사용자 결정으로 Codex 한도가 풀리면 같은 브랜치에서 이어서 한다.
   - task/TASK-011 `75fc7fe`: Accounts/, Auth/, Ranking/ 초안, MarketLoop·Program 수정
   - task/TASK-012 `e854b57`: Members.tsx, MemberOrders.tsx, mockMemberSource.ts, Orders.tsx 대체 중
   - task/TASK-013 `f10897b`: .github/workflows(ci, uptime), Operations/(메트릭·백업), pull_backup.ps1
