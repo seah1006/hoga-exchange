@@ -49,6 +49,9 @@ export class MockMemberSource extends MockMarketSource implements MemberSource {
       if (!this.sinks.size) { this.stop?.(); this.stop = undefined }
     }
   }
+  override async getStateHash() {
+    return { ...await super.getStateHash(), ledgerHash: this.mockHash(this.members.map(({ profile, ledger }) => [profile.id, ledger])) }
+  }
   private publish(message: MarketMessage) { for (const handler of this.sinks) handler(message) }
   private accountEvent() { if (this.user) this.publish({ type: 'accountUpdate', data: this.account(this.user) }) }
   private requireUser() { return this.user ?? fail(401, 'Unauthorized') }

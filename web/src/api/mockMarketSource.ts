@@ -188,9 +188,12 @@ export class MockMarketSource implements MarketSource {
     this.emit({ type: 'bookSnapshot', data: this.book() })
     return { ok: true }
   }
-  async getStateHash() {
+  protected mockHash(value: unknown) {
     let hash = 2166136261
-    for (const character of JSON.stringify(this.state)) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619)
-    return { seq: this.state.seq, stateHash: (hash >>> 0).toString(16).padStart(8, '0'), restoredFromJournal: this.restored }
+    for (const character of JSON.stringify(value)) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619)
+    return (hash >>> 0).toString(16).padStart(8, '0')
+  }
+  async getStateHash() {
+    return { seq: this.state.seq, stateHash: this.mockHash(this.state), ledgerHash: this.mockHash([]), restoredFromJournal: this.restored }
   }
 }

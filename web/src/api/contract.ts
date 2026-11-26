@@ -58,7 +58,7 @@ export interface ExperimentSummary {
   scenarios: ExperimentScenarioSummary[]
   caveat: string
 }
-export interface StateHash { seq: number; stateHash: string; restoredFromJournal: boolean }
+export interface StateHash { seq: number; stateHash: string; ledgerHash: string; restoredFromJournal: boolean }
 
 export interface User { id: string; nickname: string; isAdmin: boolean }
 export interface Profile extends User { email: string }

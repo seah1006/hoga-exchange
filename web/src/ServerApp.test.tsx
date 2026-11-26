@@ -221,6 +221,19 @@ test('accountUpdate가 미선택 주문 상태와 계좌를 갱신한다', async
   expect(screen.getByRole('button', { name: 'o-124 취소' })).toBeDefined()
 })
 
+test('단일가 진입과 종료에서 accountUpdate 없이 내 주문 상태를 다시 조회한다', async () => {
+  const { book, showBook, setOrders } = setup()
+  setOrders([resting])
+  showBook(book)
+  expect(await screen.findByText('대기 중')).toBeDefined()
+  setOrders([{ ...resting, status: 'WaitingAuction' }])
+  showBook({ ...book, seq: book.seq + 1, phase: 'CallAuction', vi: { ...fixture.vi, kind: 'Dynamic' } })
+  expect(await screen.findByText('단일가 대기')).toBeDefined()
+  setOrders([resting])
+  showBook({ ...book, seq: book.seq + 2 })
+  expect(await screen.findByText('대기 중')).toBeDefined()
+})
+
 test.each(['', '0', '-1', '1.5', '1000001', '9007199254740993'])('수량 %j은 서버에 전송하지 않는다', async (quantity) => {
   const { fetcher, book, showBook } = setup()
   showBook(book)

@@ -27,6 +27,7 @@ export function MemberOrders({ source, book, price, onPrice, showAccount, online
   const [selected, setSelected] = useState('')
   const [details, setDetails] = useState<{ id: string; data?: Explanation | null; error?: string }>()
   const refresh = useRef<() => void>(() => {})
+  const previousPhase = useRef(book.phase)
   const selectedOrder = orders.value?.find(({ orderId }) => orderId === selected)
   const selectedStatus = selectedOrder?.status, selectedRemaining = selectedOrder?.remainingQuantity
   const [detailRetry, retryDetail] = useState(0)
@@ -57,6 +58,12 @@ export function MemberOrders({ source, book, price, onPrice, showAccount, online
     load(true)
     return () => { live = false; clearTimeout(timer); unsubscribe(); refresh.current = () => {} }
   }, [source, online])
+
+  // Entering or leaving an auction changes resting order statuses even without a balance event.
+  useEffect(() => {
+    if (previousPhase.current !== book.phase) refresh.current()
+    previousPhase.current = book.phase
+  }, [book.phase])
 
   useEffect(() => {
     if (!selected) return
