@@ -2,7 +2,8 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, expect, test, vi } from 'vitest'
 import { App } from './App'
 import { maxBuy } from './MemberOrders'
-import { formatReturn } from './Members'
+import { AccountPanel, AuthDialog, formatReturn } from './Members'
+import members from './api/fixtures/contract-v05.json'
 import { MockMemberSource } from './api/mockMemberSource'
 import { MarketApiError } from './api/serverMarketSource'
 
@@ -37,6 +38,9 @@ test('비회원은 시세와 실험을 보되 주문과 관리자 패널은 숨�
   fireEvent.click(screen.getByRole('link', { name: '개인정보 안내' }))
   expect(screen.getByText(/실제 돈이나 주식을 거래하지 않습니다/)).toBeDefined()
   expect(screen.getByText(/비밀번호 해시는 계정 확인에/)).toBeDefined()
+  for (const text of ['로그인 기록은 30일간 보관합니다', '계정과 로그인 기록이 삭제됩니다', '서버 백업에 최대 7일간 남을 수 있습니다', '지난 랭킹 기록은 ‘탈퇴한 사용자’로 표시됩니다']) {
+    expect(screen.getByText((content) => content.includes(text))).toBeDefined()
+  }
 })
 
 test('가입·로그인 폼이 입력 형식을 확인하고 계약 오류를 한국어로 표시한다', async () => {
@@ -49,7 +53,7 @@ test('가입·로그인 폼이 입력 형식을 확인하고 계약 오류를 �
   set('이메일', email)
   set('비밀번호', crypto.randomUUID())
   click('로그인하기')
-  expect(await screen.findByText('이메일 또는 비밀번호를 확인하세요.')).toBeDefined()
+  expect(await screen.findByText('이메일 또는 비밀번호가 올바르지 않습니다. 여러 번 실패하면 잠시 로그인할 수 없습니다.')).toBeDefined()
   expect(Boolean((screen.getByLabelText('비밀번호') as HTMLInputElement).value)).toBe(false)
   click('가입'); set('이메일', email); click('가입하기')
   expect(screen.getByRole('alert').textContent).toContain('10자 이상')
@@ -124,4 +128,48 @@ test('매수 수량은 몫을 내림하고 bp를 소수점 둘째 자리까지 �
   expect(maxBuy(10_000, 10.5)).toBe(0)
   expect(formatReturn(27)).toBe('0.27%')
   expect(formatReturn(-10)).toBe('-0.10%')
+})
+
+test('최신 시세가 없거나 유효하지 않으면 서버 평가값을 사용한다', () => {
+  const props = { account: members.account, error: '', retry: () => {} }
+  const view = render(<AccountPanel {...props} />)
+  expect(screen.getByText('20,555,000원')).toBeDefined()
+  expect(screen.getByText('+555,000원')).toBeDefined()
+  expect(screen.getByText('+2.77%')).toBeDefined()
+  view.rerender(<AccountPanel {...props} lastPrice={0} />)
+  expect(screen.getByText('20,555,000원')).toBeDefined()
+})
+
+test.each(['login', 'delete'] as const)('%s 화면의 429는 응답 코드 문자열과 무관하게 같은 안내를 표시한다', async (mode) => {
+  const source = new MockMemberSource(42, 0.01)
+  const failure = new MarketApiError(429, 'HttpError', 'HTTP 429')
+  if (mode === 'login') vi.spyOn(source, 'login').mockRejectedValueOnce(failure)
+  else vi.spyOn(source, 'deleteMe').mockRejectedValueOnce(failure)
+  const changed = vi.fn()
+  render(<AuthDialog initial={mode} source={source} changed={changed} close={() => {}} />)
+  if (mode === 'login') set('이메일', email)
+  set('비밀번호', crypto.randomUUID())
+  click(mode === 'login' ? '로그인하기' : '탈퇴하기')
+  expect((await screen.findByRole('alert')).textContent).toBe('시도가 너무 많습니다. 잠시 후 다시 시도하세요.')
+  expect(changed).not.toHaveBeenCalled()
+})
+
+
+test('로그아웃 전 시작한 세션 조회가 늦게 끝나도 계좌를 다시 열지 않는다', async () => {
+  const source = await setup()
+  await register(crypto.randomUUID())
+  vi.spyOn(source, 'logout').mockRejectedValueOnce(new MarketApiError(503, 'Unavailable', '잠시 뒤 다시 시도하세요.'))
+  let answer: (profile: typeof members.profile) => void = () => {}
+  const pending = new Promise<typeof members.profile>((resolve) => { answer = resolve })
+  const profileRequest = vi.spyOn(source, 'getMe').mockReturnValueOnce(pending)
+
+  fireEvent.click(screen.getByText(nickname)); click('로그아웃')
+  await screen.findByRole('alert')
+  click('로그인 상태 다시 확인')
+  expect(profileRequest).toHaveBeenCalledOnce()
+  click('로그아웃')
+  await screen.findByText('로그인하면 주문할 수 있습니다')
+  await act(async () => { answer(members.profile) })
+  expect(screen.getByText('로그인하면 주문할 수 있습니다')).toBeDefined()
+  expect(screen.queryByRole('region', { name: '내 계좌' })).toBeNull()
 })

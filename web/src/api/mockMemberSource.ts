@@ -92,12 +92,12 @@ export class MockMemberSource extends MockMarketSource implements MemberSource {
   async login({ email, password }: Login) {
     email = email.trim().toLowerCase()
     const now = Date.now(), attempt = this.attempts.get(email)
-    if (attempt && attempt.until > now) fail(429, 'LockedOut')
+    if (attempt && attempt.until > now) fail(429, 'TooManyRequests')
     const member = this.members.find(({ profile }) => profile.email === email)
     if (!member || member.verifier !== verifier(password)) {
       const count = (attempt?.until ? 0 : attempt?.count ?? 0) + 1
       this.attempts.set(email, { count, until: count >= 5 ? now + 300_000 : 0 })
-      return fail(count >= 5 ? 429 : 401, count >= 5 ? 'LockedOut' : 'InvalidCredentials')
+      return fail(401, 'InvalidCredentials')
     }
     this.attempts.delete(email); this.user = member; this.accountEvent()
     return userDto(member.profile)

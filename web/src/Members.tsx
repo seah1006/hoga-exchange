@@ -9,8 +9,8 @@ export const roundNotice = '매일 05:00 새 라운드 · 시작 자산 현금 1
 export const formatReturn = (bp: number) => `${(bp / 100).toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
 const authMessages: Record<string, string> = {
   InvalidEmail: '이메일 주소를 확인하세요.', WeakPassword: '비밀번호를 10자 이상 입력하세요.', InvalidNickname: '닉네임은 2~16자로 입력하세요.',
-  EmailTaken: '이미 가입된 이메일입니다.', NicknameTaken: '이미 사용 중인 닉네임입니다.', InvalidCredentials: '이메일 또는 비밀번호를 확인하세요.',
-  LockedOut: '로그인이 잠겼습니다. 5분 뒤 다시 시도하세요.', Unauthorized: '다시 로그인하세요.', BadCsrfToken: '보안 확인에 실패했습니다. 다시 시도하세요.',
+  EmailTaken: '이미 가입된 이메일입니다.', NicknameTaken: '이미 사용 중인 닉네임입니다.',
+  Unauthorized: '다시 로그인하세요.', BadCsrfToken: '보안 확인에 실패했습니다. 다시 시도하세요.',
 }
 export const authError = (error: unknown) => error instanceof MarketApiError ? authMessages[error.code] ?? marketErrorMessage(error) : marketErrorMessage(error)
 export type AuthMode = 'login' | 'register' | 'delete'
@@ -45,7 +45,10 @@ export function AuthDialog({ initial, source, close, changed }: { initial: AuthM
       else changed(mode === 'register' ? await source.register({ email, password, nickname }) : await source.login({ email, password }))
       close()
     } catch (cause) {
-      setError(mode === 'delete' && cause instanceof MarketApiError && cause.code === 'InvalidCredentials' ? '비밀번호를 확인하세요.' : authError(cause))
+      if (cause instanceof MarketApiError && cause.status === 429) setError('시도가 너무 많습니다. 잠시 후 다시 시도하세요.')
+      else if (cause instanceof MarketApiError && cause.status === 401 && mode === 'login') setError('이메일 또는 비밀번호가 올바르지 않습니다. 여러 번 실패하면 잠시 로그인할 수 없습니다.')
+      else if (cause instanceof MarketApiError && cause.code === 'InvalidCredentials' && mode === 'delete') setError('비밀번호를 확인하세요.')
+      else setError(authError(cause))
       setBusy(false); field.focus()
     }
   }
@@ -64,15 +67,28 @@ export function AuthDialog({ initial, source, close, changed }: { initial: AuthM
   </dialog>
 }
 
-export function AccountPanel({ account, error, retry }: { account?: Account; error: string; retry: () => void }) {
+function markToMarket(account: Account, lastPrice?: number) {
+  const { cash, cashOnHold, shares, sharesOnHold, initialValuation } = account
+  if (lastPrice === undefined || lastPrice <= 0 || initialValuation <= 0 ||
+      ![lastPrice, initialValuation, cash, cashOnHold, shares, sharesOnHold].every(Number.isSafeInteger)) return account
+
+  // 서버 랭킹과 같은 정수 산식. 만분율의 소수부는 음수도 0 방향으로 버린다.
+  const valuation = BigInt(cash) + BigInt(cashOnHold) + (BigInt(shares) + BigInt(sharesOnHold)) * BigInt(lastPrice)
+  const pnl = valuation - BigInt(initialValuation)
+  const metrics = { valuation: Number(valuation), pnl: Number(pnl), returnBp: Number(pnl * 10_000n / BigInt(initialValuation)) }
+  return Object.values(metrics).every(Number.isSafeInteger) ? metrics : account
+}
+
+export function AccountPanel({ account, lastPrice, error, retry }: { account?: Account; lastPrice?: number; error: string; retry: () => void }) {
+  const metrics = account && markToMarket(account, lastPrice)
   return <section className="panel" aria-label="내 계좌"><h2>내 계좌</h2>
     {error && <p className="error" role="alert">{error} <button onClick={retry}>다시 시도</button></p>}
     {!account && !error && <p role="status">계좌 불러오는 중</p>}
-    {account && <><p className="muted">라운드 {account.round}</p><dl className="account-values">
+    {account && metrics && <><p className="muted">라운드 {account.round}</p><dl className="account-values">
       <dt>주문 가능 현금</dt><dd>{formatPrice(account.cash)}</dd><dt>묶인 현금</dt><dd>{formatPrice(account.cashOnHold)}</dd>
       <dt>매도 가능 주식</dt><dd>{formatQuantity(account.shares)}</dd><dt>묶인 주식</dt><dd>{formatQuantity(account.sharesOnHold)}</dd>
-      <dt>평가액</dt><dd>{formatPrice(account.valuation)}</dd><dt>평가 손익</dt><dd>{account.pnl > 0 ? '+' : ''}{formatPrice(account.pnl)}</dd>
-      <dt>수익률</dt><dd>{account.returnBp > 0 ? '+' : ''}{formatReturn(account.returnBp)}</dd>
+      <dt>평가액</dt><dd>{formatPrice(metrics.valuation)}</dd><dt>평가 손익</dt><dd>{metrics.pnl > 0 ? '+' : ''}{formatPrice(metrics.pnl)}</dd>
+      <dt>수익률</dt><dd>{metrics.returnBp > 0 ? '+' : ''}{formatReturn(metrics.returnBp)}</dd>
     </dl></>}
   </section>
 }
@@ -106,6 +122,7 @@ export function RankingPanel({ source, reset }: { source: MemberSource; reset: n
   const active = state.key === requestKey ? state : null
   const data = active?.data
   return <section className="panel ranking"><h2>라운드 랭킹</h2><p className="muted">{roundNotice}</p>
+    <p className="muted">교육용 모의투자 · 한 사람이 여러 계정을 쓰는 경우를 막지 않습니다.</p>
     <label>조회할 라운드<select value={round} onChange={(event) => setRound(event.target.value)}><option value="">현재 라운드</option>{rounds.map((item) => <option key={item}>{item}</option>)}</select></label>
     {roundError && <p role="alert" className="error">지난 라운드 조회: {roundError} <button onClick={() => retry((n) => n + 1)}>다시 시도</button></p>}
     {!active && <p role="status">랭킹 불러오는 중</p>}
@@ -122,7 +139,7 @@ export function Privacy({ mock }: { mock: boolean }) {
   return <section className="panel privacy"><h2>개인정보 안내</h2>
     <p>교육용 모의투자 서비스입니다. 실제 돈이나 주식을 거래하지 않습니다.</p>
     <h3>수집 항목과 목적</h3><p>이메일과 비밀번호 해시는 계정 확인에, 닉네임은 랭킹 표시에, 로그인 기록은 보안 관리에 사용합니다. 랭킹에 이메일은 공개하지 않습니다.</p>
-    <h3>보관과 탈퇴</h3><p>닉네임 메뉴의 ‘탈퇴’에서 비밀번호를 다시 입력하면 계정이 삭제됩니다. 지난 랭킹에는 ‘탈퇴한 사용자’로 표시됩니다. 로그인 기록의 구체적인 보관 기간은 아직 정해지지 않았습니다.</p>
+    <h3>보관과 탈퇴</h3><p>로그인 기록은 30일간 보관합니다. 닉네임 메뉴의 ‘탈퇴’에서 비밀번호를 다시 입력하면 계정과 로그인 기록이 삭제됩니다. 삭제된 정보는 서버 백업에 최대 7일간 남을 수 있습니다. 지난 랭킹 기록은 ‘탈퇴한 사용자’로 표시됩니다.</p>
     {mock && <p className="muted">목 모드에서는 새로고침하면 입력 정보가 사라집니다. 실제 비밀번호를 사용하지 마세요.</p>}
   </section>
 }
