@@ -30,13 +30,17 @@ export function App({ source, speed }: { source: MemberSource; speed?: number })
   const [auth, setAuth] = useState<AuthMode>()
   const [logoutBusy, setLogoutBusy] = useState(false)
   const profileMenu = useRef<HTMLDetailsElement>(null)
+  const sessionVersion = useRef(0)
   useEffect(() => {
     let live = true
+    const version = sessionVersion.current
+    const isCurrent = () => live && version === sessionVersion.current
     void source.refreshCsrf().catch(() => { /* 다음 변경 요청에서 재시도한다. */ })
-    void source.getMe().then((profile) => { if (live) { setUser(profile); setSessionError('') } }, (error) => { if (live) { setUser(null); setSessionError(authError(error)) } })
+    void source.getMe().then((profile) => { if (isCurrent()) { setUser(profile); setSessionError('') } }, (error) => { if (isCurrent()) { setUser(null); setSessionError(authError(error)) } })
     return () => { live = false }
   }, [source, sessionRetry])
   function changed(next: User | null) {
+    sessionVersion.current++
     if (profileMenu.current) profileMenu.current.open = false
     setUser(next); setSessionError(''); setPrice('')
   }

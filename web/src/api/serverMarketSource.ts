@@ -41,6 +41,7 @@ export class ServerMarketSource implements MemberSource {
   private status: MarketConnection = 'connecting'
   private session?: HubSession
   private csrf?: Promise<string>
+  private acceptAccountUpdates = true
 
   constructor({ base = '', fetcher = (input, init) => fetch(input, init), createHub: makeHub = createHub }: ServerOptions = {}) {
     this.base = base.trim().replace(/\/+$/, '')
@@ -96,7 +97,7 @@ export class ServerMarketSource implements MemberSource {
     }
     for (const name of events) {
       hub.on(name, (data) => {
-        if (!isCurrent()) return
+        if (!isCurrent() || (name === 'accountUpdate' && !this.acceptAccountUpdates)) return
         // 이력은 start/onreconnected 알림보다 먼저 도착할 수 있다.
         beginSync()
         const message = { type: name, data } as MarketMessage
@@ -168,7 +169,8 @@ export class ServerMarketSource implements MemberSource {
     }
   }
 
-  private async sessionChanged() {
+  private sessionChanged(signedIn: boolean) {
+    this.acceptAccountUpdates = signedIn
     this.csrf = undefined
     const old = this.session
     if (old) {
@@ -178,8 +180,8 @@ export class ServerMarketSource implements MemberSource {
       void old.hub.stop().catch(() => { /* 이전 세션은 무시한다. */ })
       if (this.listeners.size) this.connect()
     }
-    // 쿠키 변경이 끝났다. 재발급 실패 시 다음 변경 요청에서 다시 시도한다.
-    await this.refreshCsrf().catch(() => undefined)
+    // 쿠키 변경이 끝났다. 화면 전환을 막지 않고 토큰을 재발급한다.
+    void this.refreshCsrf().catch(() => undefined)
   }
 
   async getMe() {
@@ -188,16 +190,16 @@ export class ServerMarketSource implements MemberSource {
   }
   async login(data: Login) {
     const user = await this.mutate<User>('/api/auth/login', { method: 'POST', body: data })
-    await this.sessionChanged()
+    this.sessionChanged(true)
     return user
   }
   async register(data: Registration) {
     const user = await this.mutate<User>('/api/auth/register', { method: 'POST', body: data })
-    await this.sessionChanged()
+    this.sessionChanged(true)
     return user
   }
-  async logout() { await this.mutate<void>('/api/auth/logout', { method: 'POST' }); await this.sessionChanged() }
-  async deleteMe(password: string) { await this.mutate<void>('/api/auth/me', { method: 'DELETE', body: { password } }); await this.sessionChanged() }
+  async logout() { await this.mutate<void>('/api/auth/logout', { method: 'POST' }); this.sessionChanged(false) }
+  async deleteMe(password: string) { await this.mutate<void>('/api/auth/me', { method: 'DELETE', body: { password } }); this.sessionChanged(false) }
   getAccount() { return this.request<Account>('/api/account') }
   getAccountOrders() { return this.request<AccountOrder[]>('/api/account/orders') }
   getAccountTrades() { return this.request<AccountTrade[]>('/api/account/trades') }

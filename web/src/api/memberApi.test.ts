@@ -1,4 +1,5 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
+import market from './fixtures/contract-v02.json'
 import { ServerMarketSource } from './serverMarketSource'
 import { FakeHub } from './fixtures/fakeHub'
 import fixture from './fixtures/contract-v05.json'
@@ -52,4 +53,32 @@ test('인증 응답의 임의 메시지는 화면용 오류로 전달하지 않�
   const source = new ServerMarketSource({ fetcher })
   const safe = await source.login({ email: fixture.profile.email, password: marker }).then(() => false, (error: unknown) => error instanceof Error && error.message === '서버 요청에 실패했습니다 (HTTP 400).')
   expect(safe).toBe(true)
+})
+
+test.each(['logout', 'deleteMe'] as const)('%s 성공 뒤 이전 연결과 익명 연결의 계좌 이벤트를 무시한다', async (action) => {
+  const hubs: FakeHub[] = []
+  const fetcher: typeof fetch = async (input) => {
+    if (input === '/api/auth/csrf') return Response.json({ token: 'fixture' })
+    if (input === '/api/auth/login') return Response.json(fixture.profile)
+    return new Response(null, { status: 204 })
+  }
+  const source = new ServerMarketSource({ fetcher, createHub: () => { const hub = new FakeHub(); hubs.push(hub); return hub } })
+  const listener = vi.fn()
+  const unsubscribe = source.subscribe(listener)
+  hubs[0].stop.mockImplementationOnce(() => new Promise(() => {}))
+  const account = JSON.stringify(fixture.account)
+  hubs[0].emit('accountUpdate', account)
+  expect(listener).toHaveBeenCalledWith({ type: 'accountUpdate', data: fixture.account })
+  listener.mockClear()
+  if (action === 'logout') await source.logout()
+  else await source.deleteMe(crypto.randomUUID())
+  hubs[0].emit('accountUpdate', account)
+  hubs[1].emit('accountUpdate', account)
+  expect(listener).not.toHaveBeenCalled()
+  hubs[1].emit('bookSnapshot', JSON.stringify(market.bookSnapshot))
+  expect(listener).toHaveBeenCalledWith({ type: 'bookSnapshot', data: market.bookSnapshot })
+  await source.login({ email: fixture.profile.email, password: crypto.randomUUID() })
+  hubs[2].emit('accountUpdate', account)
+  expect(listener).toHaveBeenLastCalledWith({ type: 'accountUpdate', data: fixture.account })
+  unsubscribe()
 })
