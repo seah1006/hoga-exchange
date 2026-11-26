@@ -590,11 +590,23 @@ public sealed partial class MarketTests
         app.Clock.AddMilliseconds(999); // 04:59:59.999 Asia/Seoul
         Assert.Equal(1, (await Get(client, "/healthz")).GetProperty("seq").GetInt64());
         Assert.Empty(app.Archives());
+        var backup = Path.Combine(app.BackupDirectory, "hoga-20261126.db");
+        await WaitUntil(() => File.Exists(backup)); // discard the startup snapshot, not the daily one
+        File.Delete(backup);
         app.Clock.AddMilliseconds(1);
         var reset = await Read(resets);
         Assert.Equal("Daily", reset.GetProperty("reason").GetString());
         Assert.Equal(new DateTimeOffset(2026, 11, 25, 20, 0, 0, TimeSpan.Zero), reset.GetProperty("atUtc").GetDateTimeOffset());
         Assert.Equal("market-20261126-050000.jsonl", Path.GetFileName(Assert.Single(app.Archives())));
+        await WaitUntil(() => File.Exists(backup));
+        using (var restored = new Microsoft.Data.Sqlite.SqliteConnection(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+            { DataSource = backup, Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadOnly, Pooling = false }.ToString()))
+        {
+            restored.Open();
+            using var query = restored.CreateCommand();
+            query.CommandText = "SELECT COUNT(*) FROM RoundEntry WHERE Rank = 1;";
+            Assert.Equal(1L, query.ExecuteScalar());
+        }
         app.Clock.AddMilliseconds(60_000);
         Assert.Equal(0, (await Get(client, "/healthz")).GetProperty("seq").GetInt64());
         Assert.False(resets.Reader.TryRead(out _));
@@ -718,6 +730,7 @@ public sealed partial class MarketTests
         public string JournalPath { get; } = existingPath ?? (isolateJournal
             ? Path.Combine(AppContext.BaseDirectory, Guid.NewGuid().ToString("N"), "market.jsonl")
             : Path.Combine(AppContext.BaseDirectory, $"test-{Guid.NewGuid():N}.jsonl"));
+        public string BackupDirectory => JournalPath + ".backups";
         public string[] Archives() => Directory.GetFiles(Path.GetDirectoryName(JournalPath)!, "market-*.jsonl");
         public string Key { get; } = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         public TestClock Clock { get; } = new(frozen);
@@ -727,6 +740,7 @@ public sealed partial class MarketTests
             {
                 ["Market:JournalPath"] = JournalPath, ["Market:AdminKey"] = Key,
                 ["Market:DatabasePath"] = JournalPath + ".db", ["Market:KeysPath"] = JournalPath + ".keys",
+                ["Operations:BackupDirectory"] = BackupDirectory,
                 ["Market:InitialCash"] = initialCash.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["Market:OrdersPerSecond"] = ordersPerSecond.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["Market:TrustedProxyNetwork"] = proxyNetwork,
@@ -764,6 +778,7 @@ public sealed partial class MarketTests
                 File.Delete(JournalPath);
                 foreach (var file in Directory.GetFiles(Path.GetDirectoryName(JournalPath)!, Path.GetFileName(JournalPath) + ".*")) File.Delete(file);
                 if (Directory.Exists(JournalPath + ".keys")) Directory.Delete(JournalPath + ".keys", recursive: true);
+                if (Directory.Exists(BackupDirectory)) Directory.Delete(BackupDirectory, recursive: true);
             }
         }
     }

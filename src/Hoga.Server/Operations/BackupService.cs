@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using System.Globalization;
 using System.Threading.Channels;
 
@@ -14,25 +15,34 @@ internal interface ISqliteSnapshot
     ValueTask<bool> Copy(string database, string staging, CancellationToken stop);
 }
 
-// TASK-011: use SqliteConnection.BackupDatabase with separately opened source/destination connections.
-// Never use byte copying on a running SQLite database (including WAL databases).
-internal sealed class OfflineFileSnapshot(IConfiguration configuration) : ISqliteSnapshot
+internal sealed class OnlineSqliteSnapshot : ISqliteSnapshot
 {
-    public async ValueTask<bool> Copy(string database, string staging, CancellationToken stop)
+    public ValueTask<bool> Copy(string database, string staging, CancellationToken stop)
     {
-        if (!configuration.GetValue<bool>("Operations:AllowOfflineDatabaseCopy") || HasSidecar(database)) return false;
-        await using var source = new FileStream(database, FileMode.Open, FileAccess.Read, FileShare.Read);
-        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Options = FileOptions.Asynchronous };
+        stop.ThrowIfCancellationRequested();
+        // Restrict permissions before opening a file that will contain member data.
+        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
         if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-        await using var target = new FileStream(staging, options);
-        await source.CopyToAsync(target, stop);
-        await target.FlushAsync(stop);
-        target.Flush(flushToDisk: true);
-        return !HasSidecar(database);
+        using (new FileStream(staging, options)) { }
+        using var source = Open(database, SqliteOpenMode.ReadOnly);
+        using var target = Open(staging, SqliteOpenMode.ReadWrite);
+        source.BackupDatabase(target);
+        // The backup must open read-only without needing writable WAL sidecars.
+        using var journalMode = target.CreateCommand();
+        journalMode.CommandText = "PRAGMA journal_mode=DELETE;";
+        if (!string.Equals(journalMode.ExecuteScalar() as string, "delete", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("SQLite backup could not be made standalone.");
+        stop.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(true);
     }
 
-    private static bool HasSidecar(string database) => File.Exists(database + "-wal") ||
-        File.Exists(database + "-shm") || File.Exists(database + "-journal");
+    private static SqliteConnection Open(string path, SqliteOpenMode mode)
+    {
+        var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        { DataSource = path, Mode = mode, Pooling = false }.ToString());
+        try { connection.Open(); return connection; }
+        catch { connection.Dispose(); throw; }
+    }
 }
 
 internal sealed class BackupService(IConfiguration config, IWebHostEnvironment environment, TimeProvider clock,

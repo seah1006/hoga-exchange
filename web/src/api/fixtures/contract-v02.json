@@ -136,6 +136,7 @@
   "stateHash": {
     "restoredFromJournal": true,
     "seq": 1024,
-    "stateHash": "ab12..."
+    "stateHash": "ab12...",
+    "ledgerHash": "cd34..."
   }
 }

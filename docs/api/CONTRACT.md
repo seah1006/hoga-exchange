@@ -1,6 +1,7 @@
 # 서버-화면 계약 (CONTRACT) v0.5
 
 변경 이력:
+- v0.5 통합 정정 (2026-11-26) 상태 해시에 `ledgerHash` 추가, 계좌 예시 및 주문 상태·관리자 인증 응답 명시.
 - v0.5 (2026-11-25, dev/service) 회원·세션·CSRF, 주문 로그인 필수와 소유권, 잔고 거부 사유, 계좌·내 주문·내 체결·랭킹 API, `accountUpdate` 메시지 (ADR 0005).
 - v0.4 (2026-11-25) 실험 요약 `GET /api/experiments/summary`, run의 `minAtMs`·`maxAtMs`, 시장 초기화 `POST /api/admin/reset`과 `marketReset` 메시지, `GET /healthz` 추가 (TASK-009, TASK-007). 모두 추가만 하고 기존 필드는 바꾸지 않는다.
 - v0.3 (2026-11-25) 관리자 헤더 `X-Admin-Key`, 주문 수량 서버 한도(400), 접속 직후 메시지 순서 추가 (REVIEW-5). 접속 직후 이력 재전송은 TASK-008에서 구현.
@@ -74,14 +75,15 @@
 | `GET /api/experiments/{id}` | - | 아래 비교 실험 객체 |
 | `POST /api/admin/scenario` | `{ "name": "FatFinger" }` (`"FatFinger"` \| `"PanicSell"` \| `"Calm"`) | `{ "ok": true }` |
 | `POST /api/admin/crash` | - | `{ "ok": true }` (서버가 재시작을 흉내 낸다) |
-| `GET /api/state/hash` | - | `{ "seq": 1024, "stateHash": "ab12...", "restoredFromJournal": true }` |
+| `GET /api/state/hash` | - | `{ "seq": 1024, "stateHash": "ab12...", "ledgerHash": "cd34...", "restoredFromJournal": true }` |
 | `GET /api/experiments/summary` (v0.4) | - | 아래 실험 요약 객체 |
-| `POST /api/admin/reset` (v0.4) | - | `{ "ok": true }` 저널을 보관하고 빈 시장으로 다시 시작. 관리자 키 필요 |
+| `POST /api/admin/reset` (v0.4) | - | `{ "ok": true }` 저널을 보관하고 빈 시장으로 다시 시작. 관리자 세션(+CSRF) 또는 관리자 키 필요 |
 | `GET /healthz` (v0.4) | - | `{ "ok": true, "seq": 1024 }` 처리 루프가 살아 있으면 200, 아니면 503 |
 
 거부 응답 예: `{ "orderId": null, "accepted": false, "reason": "AboveUpperLimit", "ruleId": "R-LIMIT-04" }`
 
 - orderId 형식은 불투명, 장(초기화) 간 유일.
+- `ledgerHash`는 저널 재생으로 복원되는 가상 계좌 원장의 해시다. `stateHash`는 시장 엔진의 해시다.
 
 ### 거부 사유 (`reason`)
 | 값 | 뜻 | ruleId |
@@ -98,9 +100,9 @@
 ### 실패 응답
 - 요청 형식 오류: HTTP 400 `{ "error": "BadRequest", "message": "..." }`
   - 주문 수량이 서버 한도(`Market:MaxOrderQuantity`, 기본 1,000,000주, 임의 지정)를 넘어도 400이다. KRX 규칙이 아니라 서버 입력 한도이며 저널에 기록되지 않는다. 0 이하 수량은 엔진 거부(`InvalidQuantity`)로 200 + `accepted: false`.
-- 관리자 API(`/api/admin/*`)는 요청 헤더 `X-Admin-Key`(이름 임의 지정)가 서버 설정 `Market:AdminKey`와 같아야 한다. 서버에 키가 설정되지 않았으면 항상 401이다.
+- 관리자 API(`/api/admin/*`)는 `Admin` 역할 세션과 CSRF 토큰 또는 서버 설정 `Market:AdminKey`와 일치하는 `X-Admin-Key` 헤더를 요구한다.
 - 없는 주문·실험: HTTP 404 `{ "error": "NotFound", "message": "..." }`
-- 관리자 키 없음: HTTP 401 `{ "error": "Unauthorized", "message": "..." }`
+- 유효한 관리자 키가 없고 비로그인: HTTP 401 `{ "error": "Unauthorized" }`. 관리자 역할 없는 로그인 사용자: 같은 코드로 HTTP 403.
 - 알 수 없는 시나리오: HTTP 400 `{ "error": "UnknownScenario", "message": "..." }`
 - IP 요청 제한 초과: HTTP 429 `{ "error": "TooManyRequests" }` (주문·취소 합산 20건/초, 관리자 API 합산 10건/분, 기본값 임의 지정).
 - 주문 거부는 에러가 아니라 HTTP 200 + `accepted: false`
@@ -169,7 +171,7 @@
 ## 3. 회원·계좌 (v0.5, ADR 0005)
 
 ### 공통
-- 세션은 쿠키. 상태를 바꾸는 모든 요청(POST/DELETE, 주문 포함)은 `GET /api/auth/csrf`로 받은 토큰을 `X-CSRF-TOKEN` 헤더에 넣는다. 없거나 틀리면 400 `{ "error": "BadCsrfToken" }`.
+- 세션은 쿠키. 운영 관리자 키로 승인한 요청을 제외하고 상태를 바꾸는 요청(POST/DELETE, 주문 포함)은 `GET /api/auth/csrf`로 받은 토큰을 `X-CSRF-TOKEN` 헤더에 넣는다. 없거나 틀리면 400 `{ "error": "BadCsrfToken" }`.
 - 로그인이 필요한 API를 로그인 없이 부르면 401 `{ "error": "Unauthorized" }`. 남의 주문은 404.
 - 사용자 객체: `{ "id": "u-…", "nickname": "세아", "isAdmin": false }` (이메일은 `me`에서만 반환)
 
@@ -194,17 +196,19 @@
 | `GET /api/account/orders` | 이번 라운드 내 주문 `[{ "orderId", "side", "price", "quantity", "filledQuantity", "remainingQuantity", "status", "createdAtMs" }]` (최신순, 최대 200) |
 | `GET /api/account/trades` | 이번 라운드 내 체결 `[{ "orderId", "side", "price", "quantity", "logicalTimeMs" }]` (최신순, 최대 200) |
 
+- 내 주문의 `status`: `Resting`, `WaitingAuction`, `PartiallyFilled`, `Filled`, `Cancelled`, `Rejected`. 미체결 잔량이 있는 주문은 단일가매매 중 `WaitingAuction`으로 표시한다.
+
 ```json
 {
   "round": "2026-11-26",
   "cash": 9000000, "cashOnHold": 500000,
   "shares": 1100, "sharesOnHold": 0,
   "initialValuation": 20000000,
-  "lastPrice": 10050, "valuation": 20055000,
-  "pnl": 55000, "returnBp": 27
+  "lastPrice": 10050, "valuation": 20555000,
+  "pnl": 555000, "returnBp": 277
 }
 ```
-- `valuation = cash + cashOnHold + (shares + sharesOnHold) × lastPrice`. `returnBp`는 만분율 정수(27 = 0.27%).
+- `valuation = cash + cashOnHold + (shares + sharesOnHold) × lastPrice`. `pnl = valuation − initialValuation`. `returnBp`는 `pnl × 10,000 ÷ initialValuation`의 소수부를 버린 정수(277 = 2.77%).
 
 ### 랭킹
 | 메서드·경로 | 응답 |
@@ -215,5 +219,5 @@
 - 랭킹에는 그 라운드에 주문을 한 번 이상 한 사용자만 나온다. 동률은 먼저 첫 주문한 사람이 위.
 
 ### SignalR (추가)
-- 로그인한 연결에는 본인 계좌가 바뀔 때(체결·취소·초기화) `accountUpdate`(계좌 객체)를 보낸다. 접속 직후에도 1회.
+- 로그인한 연결에는 본인 계좌가 바뀔 때(주문 접수·체결·취소·초기화) `accountUpdate`(계좌 객체)를 보낸다. 접속 직후에도 1회. 잔고 변동 없는 단일가 진입·종료에 이 알림을 보장하지 않으므로 `bookSnapshot.phase` 변경 시 내 주문을 다시 조회한다.
 - 관리자 API(`/api/admin/*`)는 `Admin` 역할 세션(+CSRF) 또는 기존 `X-Admin-Key`로 호출할 수 있다.

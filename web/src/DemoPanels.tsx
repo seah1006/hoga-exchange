@@ -17,7 +17,7 @@ export function Admin({ source, server, bookSeq, onReturn }: { source: MarketSou
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
   const [hash, setHash] = useState<StateHash>()
-  const [beforeHash, setBeforeHash] = useState<string>()
+  const [beforeHash, setBeforeHash] = useState<StateHash>()
   const justRestored = hash?.restoredFromJournal && hash.seq === bookSeq
   async function run(name: Scenario) {
     const result = await source.runScenario(name)
@@ -28,7 +28,7 @@ export function Admin({ source, server, bookSeq, onReturn }: { source: MarketSou
     const before = await source.getStateHash()
     const result = await source.crash()
     const after = await source.getStateHash()
-    setBeforeHash(before.stateHash); setHash(after)
+    setBeforeHash(before); setHash(after)
     setNote(result.ok ? '' : '복구에 실패했습니다.')
   }
   async function perform(action: () => Promise<void>) {
@@ -36,14 +36,15 @@ export function Admin({ source, server, bookSeq, onReturn }: { source: MarketSou
     try { await action() } catch (cause) { setError(marketErrorMessage(cause)) }
   }
   return <section className="panel admin"><h2>관리자 패널</h2><div className="row">
-    {server && <AdminKeyField />}
+    {server && <details><summary>운영용 관리자 키</summary><AdminKeyField /></details>}
     {(Object.keys(names) as Scenario[]).map((name) => <button key={name} onClick={() => void perform(() => run(name))}>{names[name]}</button>)}
     <button onClick={() => void perform(restore)}>서버 강제 종료</button>
     <button onClick={() => void perform(async () => { setBeforeHash(undefined); setHash(await source.getStateHash()) })}>상태 해시 조회</button>
   </div><div aria-live="polite">
     {note && <p>{note}</p>}
     {error && <p className="error" role="alert">{error}</p>}
-    {hash && <p>상태 해시 <code>{hash.stateHash}</code> · 순번 {hash.seq} {justRestored && <strong className="success">재생으로 복구됨</strong>}
-      {justRestored && beforeHash && <span> · 복구 전 <code>{beforeHash}</code> / {beforeHash === hash.stateHash ? '일치' : '불일치'}</span>}</p>}
+    {hash && <p>상태 해시 <code>{hash.stateHash}</code> · 원장 해시 <code>{hash.ledgerHash}</code> · 순번 {hash.seq} {justRestored && <strong className="success">재생으로 복구됨</strong>}
+      {justRestored && beforeHash && <span> · 복구 전 상태 <code>{beforeHash.stateHash}</code> · 원장 <code>{beforeHash.ledgerHash}</code> / {beforeHash.stateHash === hash.stateHash && beforeHash.ledgerHash === hash.ledgerHash ? '일치' : '불일치'}</span>}</p>}
   </div></section>
 }
+

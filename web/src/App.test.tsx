@@ -1,14 +1,19 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 import { App } from './App'
-import { MockMarketSource } from './api/mockMarketSource'
+import { MockMemberSource } from './api/mockMemberSource'
 
 vi.mock('./CandleChart', () => ({ CandleChart: () => null }))
 afterEach(cleanup)
 
 test('시장 화면에서 vi 객체가 들어오면 배너가 나타나고 해제되면 사라진다', async () => {
-  const source = new MockMarketSource(42, 1)
+  const source = new MockMemberSource(42, 1)
+  await source.register({ email: 'member@example.invalid', nickname: '테스트 회원', password: crypto.randomUUID() })
+  const profile = (await source.getMe())!
+  vi.spyOn(source, 'getMe').mockResolvedValue({ ...profile, isAdmin: true })
   render(<App source={source} speed={1} />)
+  await screen.findByRole('heading', { name: '관리자 패널' })
+  await screen.findByText('주문 가능 현금')
   const banner = () => screen.queryByRole('status', { name: '변동성완화장치 진행 중' })
   expect(banner()).toBeNull()
   await act(async () => {
@@ -24,8 +29,13 @@ test('시장 화면에서 vi 객체가 들어오면 배너가 나타나고 해�
 })
 
 test('주문 거부, 재생 복구, 실험 화면의 시연 흐름을 렌더한다', async () => {
-  const source = new MockMarketSource(42, 1)
+  const source = new MockMemberSource(42, 1)
+  await source.register({ email: 'member@example.invalid', nickname: '테스트 회원', password: crypto.randomUUID() })
+  const profile = (await source.getMe())!
+  vi.spyOn(source, 'getMe').mockResolvedValue({ ...profile, isAdmin: true })
   render(<App source={source} speed={1} />)
+  await screen.findByRole('heading', { name: '관리자 패널' })
+  await screen.findByText('주문 가능 현금')
   expect(screen.getByRole('heading', { name: '1분봉 차트' })).toBeDefined()
   fireEvent.change(screen.getByLabelText('가격(원)'), { target: { value: '12930' } })
   fireEvent.click(screen.getByRole('button', { name: '매수 주문' }))
@@ -45,8 +55,13 @@ test('주문 거부, 재생 복구, 실험 화면의 시연 흐름을 렌더한�
 })
 
 test('주문 거부 시 화면의 호가창과 내 주문이 바뀌지 않는다', async () => {
-  const source = new MockMarketSource(42, 1)
+  const source = new MockMemberSource(42, 1)
+  await source.register({ email: 'member@example.invalid', nickname: '테스트 회원', password: crypto.randomUUID() })
+  const profile = (await source.getMe())!
+  vi.spyOn(source, 'getMe').mockResolvedValue({ ...profile, isAdmin: true })
   render(<App source={source} speed={1} />)
+  await screen.findByRole('heading', { name: '관리자 패널' })
+  await screen.findByText('주문 가능 현금')
   fireEvent.change(screen.getByLabelText('가격(원)'), { target: { value: '9990' } })
   fireEvent.click(screen.getByRole('button', { name: '매수 주문' }))
   const existing = await screen.findByRole('button', { name: '매수 9,990원 · 100주' })
