@@ -180,7 +180,7 @@
 | 메서드·경로 | 요청 | 응답 |
 |---|---|---|
 | `GET /api/auth/csrf` | - | `{ "token": "…" }` |
-| `POST /api/auth/register` | `{ "email", "password", "nickname" }` | 201 사용자 객체(로그인 상태가 됨). 400 `InvalidEmail`·`WeakPassword`(10자 이상, 임의 지정)·`InvalidNickname`(2~16자), 409 `EmailTaken`·`NicknameTaken`, 429 `TooManyRequests`(IP별) |
+| `POST /api/auth/register` | `{ "email", "password", "nickname" }` | 201 사용자 객체(로그인 상태가 됨). 400 `InvalidEmail`·`WeakPassword`(10~128자, 임의 지정)·`InvalidNickname`(2~16자), 409 `EmailTaken`·`NicknameTaken`, 429 `TooManyRequests`(IP별) |
 | `POST /api/auth/login` | `{ "email", "password" }` | 200 사용자 객체. 401 `InvalidCredentials`(없는 이메일·틀린 비밀번호·잠긴 계정 모두 같은 응답과 비슷한 처리 시간, REVIEW-8), 429 `TooManyRequests`(IP·이메일별 시도 제한, 임의 지정) |
 | `POST /api/auth/logout` | - | 204 (해당 계정의 모든 기존 세션 무효화) |
 | `GET /api/auth/me` | - | 200 `{ "id", "nickname", "email", "isAdmin" }` / 401 |

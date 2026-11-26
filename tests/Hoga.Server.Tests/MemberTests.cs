@@ -117,6 +117,24 @@ public sealed partial class MarketTests
     }
 
     private static string TestAddress() => Guid.NewGuid().ToString("N") + "@example.invalid";
+    [Fact]
+    public async Task PasswordLengthLimitIsSharedByRegisterAndLogin()
+    {
+        using var app = new MarketFactory(isolateJournal: true);
+        using var client = app.CreateClient();
+        await CsrfHeader(client);
+        var tooLong = new string('a', 129) + "Z9!";
+        await Code(client.PostAsJsonAsync("/api/auth/register", new { email = TestAddress(), password = tooLong, nickname = "long1" }), 400, "WeakPassword");
+        var email = TestAddress();
+        var longest = string.Concat(Enumerable.Repeat("Ab9!", 32)); // exactly 128 characters
+        using (var created = await client.PostAsJsonAsync("/api/auth/register", new { email, password = longest, nickname = "long2" }))
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        await CsrfHeader(client);
+        await Status(client.PostAsync("/api/auth/logout", null), 204);
+        await CsrfHeader(client);
+        await Status(client.PostAsJsonAsync("/api/auth/login", new { email, password = longest }), 200);
+    }
+
     private static async Task CsrfHeader(HttpClient client)
     {
         client.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
