@@ -16,16 +16,27 @@ internal static partial class Members
     internal const string DeletedNickname = "탈퇴한 사용자";
     internal static void AddMembers(this WebApplicationBuilder builder)
     {
-        var root = builder.Environment.ContentRootPath;
-        var db = Path.GetFullPath(builder.Configuration["Market:DatabasePath"] ?? "data/hoga.db", root);
-        var keys = Path.GetFullPath(builder.Configuration["Market:KeysPath"] ?? "data/keys", root);
-        builder.Services.AddDbContext<MarketDb>(o => o.UseSqlite(new SqliteConnectionStringBuilder { DataSource = db }.ToString()));
-        builder.Services.AddSingleton(new StoragePaths(db, keys));
-        builder.Services.AddDataProtection().SetApplicationName("Hoga.Server").PersistKeysToFileSystem(new(keys));
+        builder.Services.AddSingleton(services =>
+        {
+            var root = services.GetRequiredService<IWebHostEnvironment>().ContentRootPath;
+            var config = services.GetRequiredService<IConfiguration>();
+            return new StoragePaths(Path.GetFullPath(config["Market:DatabasePath"] ?? "data/hoga.db", root),
+                Path.GetFullPath(config["Market:KeysPath"] ?? "data/keys", root));
+        });
+        builder.Services.AddOptions<MarketOptions>().Validate(o => o.InitialCash >= 0 && o.InitialShares >= 0 &&
+            (Int128)o.InitialCash + (Int128)o.InitialShares * o.BasePrice > 0 &&
+            (Int128)o.InitialCash + (Int128)o.InitialShares * o.BasePrice <= long.MaxValue,
+            "시작 자산의 평가액이 올바르지 않습니다.");
+        builder.Services.AddDbContext<MarketDb>((services, options) => options.UseSqlite(new SqliteConnectionStringBuilder
+        { DataSource = services.GetRequiredService<StoragePaths>().Database }.ToString()));
+        builder.Services.AddDataProtection().SetApplicationName("Hoga.Server");
+        builder.Services.AddOptions<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>()
+            .Configure<StoragePaths, ILoggerFactory>((options, paths, logs) => options.XmlRepository =
+                new Microsoft.AspNetCore.DataProtection.Repositories.FileSystemXmlRepository(new(paths.Keys), logs));
         builder.Services.AddIdentityCore<Member>(options =>
         {
             options.User.RequireUniqueEmail = true;
-            options.User.AllowedUserNameCharacters = null;
+            options.User.AllowedUserNameCharacters = null!;
             options.Password.RequiredLength = 10; // 임의 지정 (계약 v0.5)
             options.Password.RequireLowercase = options.Password.RequireUppercase = options.Password.RequireDigit =
                 options.Password.RequireNonAlphanumeric = false;

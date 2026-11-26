@@ -8,9 +8,12 @@ public sealed class MarketHub : Hub
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        var market = Context.GetHttpContext()!.RequestServices.GetRequiredService<MarketLoop>();
-        try { await market.Unsubscribe(Context.ConnectionId); }
-        catch (Exception ex) when (ex is MarketUnavailableException or TimeoutException) { }
+        try
+        {
+            var market = Context.GetHttpContext()!.RequestServices.GetRequiredService<MarketLoop>();
+            await market.Unsubscribe(Context.ConnectionId);
+        }
+        catch (Exception ex) when (ex is MarketUnavailableException or TimeoutException or ObjectDisposedException) { }
     }
 
     public override async Task OnConnectedAsync()

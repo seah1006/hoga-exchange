@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,7 +15,25 @@ internal sealed partial class MarketLoop
     private readonly HashSet<string> _withdrawn = new(StringComparer.Ordinal);
     private string Generation => _header.MarketGeneration?.ToString("N") ?? "legacy";
     private string RoundPath => _path + "." + Generation + ".round";
-    private AccountLedger NewLedger() => new(configuration.Value.InitialCash, configuration.Value.InitialShares, _header.BasePrice);
+    private sealed record RoundMetadata(string Round, long InitialCash, long InitialShares);
+
+    private void LoadRound(DateTimeOffset now)
+    {
+        RoundMetadata metadata;
+        if (File.Exists(RoundPath))
+            metadata = JsonSerializer.Deserialize<RoundMetadata>(File.ReadAllText(RoundPath))
+                ?? throw new InvalidDataException("Missing round metadata.");
+        else
+        {
+            var options = configuration.Value;
+            metadata = new(RoundAt(now), options.InitialCash, options.InitialShares);
+            var staged = RoundPath + ".tmp";
+            File.WriteAllText(staged, JsonSerializer.Serialize(metadata));
+            File.Move(staged, RoundPath);
+        }
+        _round = metadata.Round;
+        _ledger = new(metadata.InitialCash, metadata.InitialShares, _header.BasePrice);
+    }
     private string RoundAt(DateTimeOffset now)
     {
         var local = TimeZoneInfo.ConvertTime(now, TimeZoneInfo.FindSystemTimeZoneById("Asia/Seoul"));

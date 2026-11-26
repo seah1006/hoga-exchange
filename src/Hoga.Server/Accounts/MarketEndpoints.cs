@@ -28,18 +28,22 @@ internal static class MarketEndpoints
                 return Error(400, "BadRequest", $"주문 수량은 {max:N0}주 이하여야 합니다.");
             return Results.Ok(await market.Place(owner, order.Side == "Buy" ? Side.Buy : Side.Sell, price, quantity, abort));
         }).RequireRateLimiting("orders");
-        app.MapDelete("/api/orders/{id}", async (string id, MarketLoop market, CancellationToken abort) =>
-            await market.Cancel(id, abort) is { } result ? Results.Ok(result) : MissingOrder()).RequireRateLimiting("orders");
-        app.MapGet("/api/orders/{id}/explanation", async (string id, MarketLoop market, CancellationToken abort) =>
+        app.MapDelete("/api/orders/{id}", async (string id, HttpContext context, MarketLoop market, CancellationToken abort) =>
         {
-            var (result, expired) = await market.ExplainOrder(id, abort);
+            if (Members.Id(context) is not { } owner) return Members.Error(401, "Unauthorized");
+            if (await Members.Csrf(context) is { } failure) return failure;
+            return await market.Cancel(owner, id, abort) is { } result ? Results.Ok(result) : MissingOrder();
+        }).RequireRateLimiting("orders");
+        app.MapGet("/api/orders/{id}/explanation", async (string id, HttpContext context, MarketLoop market, CancellationToken abort) =>
+        {
+            if (Members.Id(context) is not { } owner) return Members.Error(401, "Unauthorized");
+            var (result, expired) = await market.ExplainOrder(owner, id, abort);
             return result is not null ? Results.Ok(result) : expired
                 ? Error(404, "NotFound", "기록 보관 기간이 지났습니다") : MissingOrder();
         });
         var admin = app.MapGroup("/api/admin").RequireRateLimiting("admin").AddEndpointFilter(Members.AdminFilter);
         admin.MapPost("/scenario", async (HttpContext context, MarketLoop market) =>
         {
-            if (!IsAdmin(context, configuration)) return Unauthorized();
             if (!context.Request.HasJsonContentType() ||
                 context.Features.Get<IHttpRequestBodyDetectionFeature>() is { CanHaveBody: false })
                 return Error(400, "BadRequest", "JSON 시나리오 본문이 필요합니다.");
@@ -55,13 +59,11 @@ internal static class MarketEndpoints
         });
         admin.MapPost("/crash", async (HttpContext context, MarketLoop market) =>
         {
-            if (!IsAdmin(context, configuration)) return Unauthorized();
             await market.Crash(context.RequestAborted);
             return Results.Ok(new { ok = true });
         });
         admin.MapPost("/reset", async (HttpContext context, MarketLoop market) =>
         {
-            if (!IsAdmin(context, configuration)) return Unauthorized();
             if (!await market.Reset(context.RequestAborted)) return Error(503, "ServiceUnavailable", "현재 장을 보관할 수 없어 초기화를 취소했습니다.");
             return Results.Ok(new { ok = true });
         });

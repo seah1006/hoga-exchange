@@ -135,9 +135,9 @@ internal sealed partial class MarketLoop(
             foreach (var candle in _projection.Candles) await client.SendAsync("candle", candle, send.Token);
             foreach (var trade in _projection.Trades) await client.SendAsync("trade", trade, send.Token);
             await client.SendAsync("bookSnapshot", _projection.Snapshot(_engine, _seq), send.Token);
-            if (owner is not null) await client.SendAsync("accountUpdate", AccountView(owner), send.Token);
+            if (owner is not null && !_withdrawn.Contains(owner)) await client.SendAsync("accountUpdate", AccountView(owner), send.Token);
             await hub.Groups.AddToGroupAsync(id, MarketHub.Group, send.Token);
-            if (owner is not null) _online[id] = owner;
+            if (owner is not null && !_withdrawn.Contains(owner)) _online[id] = owner;
             return true;
         }
         catch (Exception ex)
@@ -189,7 +189,7 @@ internal sealed partial class MarketLoop(
                 _header = _header with { MarketGeneration = JournalReader.Read(_path).Header.MarketGeneration };
                 Restore(rebuildBots: true);
             }
-            else StartEmpty();
+            else StartEmpty(time.GetUtcNow());
             RestartClock();
             if (MarketOptions.TryParseResetTime(configuration.Value.DailyResetLocalTime, out var localTime))
             {
@@ -232,13 +232,15 @@ internal sealed partial class MarketLoop(
     private string OrderIdPrefix => _header.MarketGeneration is { } generation ? $"o-{generation:N}-" : "o-";
     private string OrderId(long sequence) => OrderIdPrefix + sequence.ToString(CultureInfo.InvariantCulture);
 
-    private void StartEmpty()
+    private void StartEmpty(DateTimeOffset now)
     {
         _header = _header with { MarketGeneration = Guid.NewGuid() };
+        LoadRound(now);
         _writer = new JournalWriter(_path, _header);
         _engine = _header.CreateEngine();
         _projection = new();
         _seq = 0;
+        RefreshRanking(now);
         _restored = _snapshotPending = _broadcastStarted = false;
         logger.LogInformation("Market started: restoredFromJournal=false, seq=0");
     }
@@ -265,6 +267,8 @@ internal sealed partial class MarketLoop(
         await _expiredRead.WaitAsync(_stopping);
         try
         {
+            if (!await SaveRound(now)) return false;
+            var previousRoundPath = RoundPath;
             var directory = Path.GetDirectoryName(_path)!;
             var archiveTime = TimeZoneInfo.ConvertTime(now, _seoul ?? TimeZoneInfo.FindSystemTimeZoneById("Asia/Seoul"));
             string archive;
@@ -286,7 +290,10 @@ internal sealed partial class MarketLoop(
                 return false;
             }
             _generation++;
-            StartEmpty();
+            StartEmpty(now);
+            try { File.Delete(previousRoundPath); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { logger.LogWarning("Could not prune previous round metadata"); }
             _bots = CreateBots();
             RestartClock();
             foreach (var old in Directory.EnumerateFiles(directory, "market-????????-??????.jsonl")
@@ -302,6 +309,7 @@ internal sealed partial class MarketLoop(
         }
         finally { _expiredRead.Release(); }
         await Broadcast("marketReset", new { symbol = "HOGA", atUtc = now.UtcDateTime, reason });
+        foreach (var id in _online.Values.Distinct(StringComparer.Ordinal)) await PublishAccount(id);
         _snapshotPending = true;
         await PublishSnapshotIfDue();
         return true;
@@ -311,8 +319,7 @@ internal sealed partial class MarketLoop(
     {
         _writer = JournalWriter.OpenExisting(_path, _header);
         var projection = new MarketProjection();
-        _ledger = NewLedger();
-        _round = File.Exists(RoundPath) ? File.ReadAllText(RoundPath) : RoundAt(time.GetUtcNow());
+        LoadRound(time.GetUtcNow());
         var restored = Recovery.Restore(_path, expectedHeader: _header,
             observe: (command, events) =>
             {
@@ -324,6 +331,7 @@ internal sealed partial class MarketLoop(
         _engine = restored.Engine;
         _seq = restored.LastSequence;
         _restored = true;
+        RefreshRanking(time.GetUtcNow());
         logger.LogInformation("Market restored: restoredFromJournal=true, seq={Sequence}, hash={Hash}", _seq, restored.StateHash);
     }
 
@@ -336,6 +344,7 @@ internal sealed partial class MarketLoop(
             if (await ResetMarket("Daily", now)) ScheduleDailyReset(now);
             else _nextDailyReset = now.AddMinutes(5); // 임의 지정: avoid hammering a failing filesystem.
         }
+        if (time.GetElapsedTime(_lastRanking) >= TimeSpan.FromSeconds(10)) RefreshRanking(time.GetUtcNow());
         // Continuous matching does not require periodic input. Avoid idle writes and sequence/hash churn.
         if (_projection.Vi is not null)
             await Process(new AdvanceTime(checked(_seq + 1), LogicalNow()));
@@ -384,6 +393,7 @@ internal sealed partial class MarketLoop(
         var accounts = _ledger.Apply(command, events);
         if (events.Any(e => e is not OrderRejected) || command is AdvanceTime) _snapshotPending = true;
         foreach (var (name, payload) in messages) await Broadcast(name, payload);
+        foreach (var id in accounts) await PublishAccount(id);
         await PublishSnapshotIfDue();
         return events;
     }
