@@ -79,7 +79,8 @@ internal sealed class LiveBots(long seed, long basePrice, double intensity = 1.0
     {
         if (command is PlaceLimitOrder p)
         {
-            var bot = p.AccountId switch
+            var account = p.AccountId.StartsWith("bot:", StringComparison.Ordinal) ? p.AccountId[4..] : p.AccountId;
+            var bot = account switch
             {
                 "MarketMaker" => _regular[0], "Noise" => _regular[1], "Momentum" => _regular[2],
                 "FatFinger" => _fatFinger, "PanicSeller" => _panic, _ => null

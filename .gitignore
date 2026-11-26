@@ -21,3 +21,7 @@ data/journal/
 # IDE
 .idea/
 .vscode/
+
+/data/ef/
+**/data/hoga.db*
+**/data/keys/

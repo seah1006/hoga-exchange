@@ -6,6 +6,8 @@
     <Content Include="../../docs/experiments/summary.json" Link="summary.json"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
              Condition="Exists('../../docs/experiments/summary.json')" />
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.15" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.15" />
     <ProjectReference Include="../Hoga.Bots/Hoga.Bots.csproj" />
     <ProjectReference Include="../Hoga.Engine/Hoga.Engine.csproj" />
     <ProjectReference Include="../Hoga.Journal/Hoga.Journal.csproj" />

@@ -30,7 +30,7 @@ internal sealed class MarketProjection
     public const string Symbol = "HOGA";
     public ViTriggered? Vi { get; private set; }
     public long LogicalTimeMs { get; private set; }
-    public bool KnowsOrder(string id) => _orders.ContainsKey(id);
+    public bool OwnsOrder(string id, string owner) => _orders.TryGetValue(id, out var order) && order.Source.AccountId == owner;
 
     public IReadOnlyList<(string Name, object Payload)> Apply(OrderCommand command, IReadOnlyList<EngineEvent> events,
         bool publish)
