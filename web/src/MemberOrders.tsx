@@ -67,11 +67,11 @@ export function MemberOrders({ source, book, price, onPrice, showAccount, online
 
   const currentPrice = Number(price || book.lastPrice)
   const max = account.value ? side === 'Buy' ? maxBuy(account.value.cash, currentPrice) : account.value.shares : undefined
-  const exceeds = max !== undefined && currentPrice > 0 && Number(quantity) > max
+  const exceeds = max !== undefined && currentPrice > 0 && Number.isInteger(Number(quantity)) && Number(quantity) <= 1_000_000 && Number(quantity) > max
   const balanceWarning = side === 'Buy' ? reasons.InsufficientCash : reasons.InsufficientShares
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (busy || !online || !account.value) return
+    if (busy || !online || !account.value || account.error) return
     const count = Number(quantity)
     if (!Number.isSafeInteger(currentPrice) || currentPrice <= 0) return setNotice({ text: '가격은 1원 이상의 정수로 입력하세요.', error: true })
     if (!Number.isInteger(count) || count < 1 || count > 1_000_000) return setNotice({ text: '수량은 1~1,000,000 사이의 정수로 입력하세요.', error: true })
@@ -106,7 +106,7 @@ export function MemberOrders({ source, book, price, onPrice, showAccount, online
         <label>수량(주)<input type="number" min={1} max={1_000_000} step={1} inputMode="numeric" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
         <p className="muted">{account.value ? `매수 가능 ${formatQuantity(maxBuy(account.value.cash, currentPrice))} · 매도 가능 ${formatQuantity(account.value.shares)}` : !account.error && '주문 가능 수량 불러오는 중'}</p>
         {exceeds && <p className="error" role="alert">{balanceWarning}</p>}
-        <button className="primary" type="submit" disabled={busy || !online || !account.value || exceeds}>{busy ? '처리 중' : `${sideText(side)} 주문`}</button>
+        <button className="primary" type="submit" disabled={busy || !online || !account.value || !!account.error || exceeds}>{busy ? '처리 중' : `${sideText(side)} 주문`}</button>
       </form>
       {notice && <p className={notice.error ? 'error' : 'success'} role={notice.error ? 'alert' : 'status'}>{notice.text} {notice.rule && <span className="badge">{notice.rule}</span>}</p>}
     </section>

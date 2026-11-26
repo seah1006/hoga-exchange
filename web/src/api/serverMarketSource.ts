@@ -126,7 +126,7 @@ export class ServerMarketSource implements MemberSource {
 
       const data: unknown = await response.json().catch(() => null)
       const code = data && typeof data === 'object' && 'error' in data && typeof data.error === 'string' ? data.error : response.status === 429 ? 'TooManyRequests' : 'HttpError'
-      const message = data && typeof data === 'object' && 'message' in data && typeof data.message === 'string' && data.message.trim()
+      const message = !path.startsWith('/api/auth/') && data && typeof data === 'object' && 'message' in data && typeof data.message === 'string' && data.message.trim()
         ? data.message : `서버 요청에 실패했습니다 (HTTP ${response.status}).`
       throw new MarketApiError(response.status, code, response.status === 429 ? '요청이 너무 잦습니다' : message)
     }
@@ -149,7 +149,7 @@ export class ServerMarketSource implements MemberSource {
 
   refreshCsrf() {
     const pending = this.request<{ token: string }>('/api/auth/csrf').then(({ token }) => {
-      if (!token) throw new MarketApiError(0, 'InvalidResponse', '보안 토큰을 받을 수 없습니다.')
+      if (typeof token !== 'string' || !token) throw new MarketApiError(0, 'InvalidResponse', '보안 토큰을 받을 수 없습니다.')
       return token
     })
     this.csrf = pending
@@ -213,4 +213,3 @@ export class ServerMarketSource implements MemberSource {
   crash() { return this.mutate<{ ok: boolean }>('/api/admin/crash', { method: 'POST', admin: true }) }
   getStateHash() { return this.request<StateHash>('/api/state/hash') }
 }
-

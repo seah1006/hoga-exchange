@@ -10,7 +10,8 @@ function setup(base?: string) {
   const hub = new FakeHub()
   const fetcher = vi.fn<typeof fetch>()
   const createHub = vi.fn(() => hub)
-  return { hub, fetcher, createHub, source: new ServerMarketSource({ base, fetcher, createHub }) }
+  const request: typeof fetch = (input, init) => String(input).endsWith('/api/auth/csrf') ? Promise.resolve(respond({ token: 'fixture' })) : fetcher(input, init)
+  return { hub, fetcher, createHub, source: new ServerMarketSource({ base, fetcher: request, createHub }) }
 }
 
 function respond(data: unknown, status = 200) {
