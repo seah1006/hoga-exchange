@@ -38,9 +38,10 @@ public sealed partial class MarketTests
         await CsrfHeader(client);
         await Status(client.PostAsync("/api/auth/logout", null), 204);
         await CsrfHeader(client);
-        for (var i = 0; i < 4; i++) await Code(client.PostAsJsonAsync("/api/auth/login", new { email, password = "" }), 401, "InvalidCredentials");
-        await Code(client.PostAsJsonAsync("/api/auth/login", new { email, password = "" }), 429, "LockedOut");
-        await Code(client.PostAsJsonAsync("/api/auth/login", new { email, password = TestPassword }), 429, "LockedOut");
+        for (var i = 0; i < 5; i++) await Code(client.PostAsJsonAsync("/api/auth/login", new { email, password = "" }), 401, "InvalidCredentials");
+        await Code(client.PostAsJsonAsync("/api/auth/login", new { email, password = "" }), 401, "InvalidCredentials");
+        await Code(client.PostAsJsonAsync("/api/auth/login", new { email, password = TestPassword }), 401, "InvalidCredentials");
+        await Code(client.PostAsJsonAsync("/api/auth/login", new { email, password = TestPassword }), 429, "TooManyRequests");
     }
 
     [Fact]
@@ -97,7 +98,7 @@ public sealed partial class MarketTests
     [Fact]
     public async Task MemberAndBotSettlementSurvivesActualHostRestartWithOriginalRoundAssets()
     {
-        using var original = new MarketFactory(frozen: true, isolateJournal: true);
+        using var original = new MarketFactory(frozen: true, isolateJournal: true, allowMissingRound: true);
         Directory.CreateDirectory(Path.GetDirectoryName(original.JournalPath)!);
         using (var writer = new JournalWriter(original.JournalPath, JournalHeader.Create(10_000, new TickSizeTable())))
             writer.Append(new PlaceLimitOrder("o-1", Side.Sell, 10_000, 2, "bot:test", 1, 0));

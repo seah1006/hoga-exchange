@@ -383,7 +383,7 @@ public sealed partial class MarketTests
                 for (var i = 2; i <= MarketProjection.TerminalCapacity + 3; ++i)
                     writer.Append(new PlaceLimitOrder($"o-{i}", Side.Buy, 10_000, 0, "rest", i, 0));
             }
-            using var app = new MarketFactory(path);
+            using var app = new MarketFactory(path, allowMissingRound: true);
             using var client = app.CreateClient();
             var market = app.Services.GetRequiredService<MarketLoop>();
             Assert.True((await market.ExplainOrder("rest", "o-2", default)).Expired);
@@ -590,7 +590,8 @@ public sealed partial class MarketTests
         app.Clock.AddMilliseconds(999); // 04:59:59.999 Asia/Seoul
         Assert.Equal(1, (await Get(client, "/healthz")).GetProperty("seq").GetInt64());
         Assert.Empty(app.Archives());
-        var backup = Path.Combine(app.BackupDirectory, "hoga-20261126.db");
+        await WaitUntil(() => Directory.Exists(app.BackupDirectory) && Directory.GetFiles(app.BackupDirectory, "*.zip").Length > 0);
+        var backup = Assert.Single(Directory.GetFiles(app.BackupDirectory, "*.zip"));
         await WaitUntil(() => File.Exists(backup)); // discard the startup snapshot, not the daily one
         File.Delete(backup);
         app.Clock.AddMilliseconds(1);
@@ -598,9 +599,13 @@ public sealed partial class MarketTests
         Assert.Equal("Daily", reset.GetProperty("reason").GetString());
         Assert.Equal(new DateTimeOffset(2026, 11, 25, 20, 0, 0, TimeSpan.Zero), reset.GetProperty("atUtc").GetDateTimeOffset());
         Assert.Equal("market-20261126-050000.jsonl", Path.GetFileName(Assert.Single(app.Archives())));
-        await WaitUntil(() => File.Exists(backup));
+        await WaitUntil(() => Directory.GetFiles(app.BackupDirectory, "*.zip").Length > 0);
+        var database = Path.Combine(app.BackupDirectory, "restore.db");
+        using (var bundle = System.IO.Compression.ZipFile.OpenRead(Assert.Single(Directory.GetFiles(app.BackupDirectory, "*.zip"))))
+        using (var entry = bundle.GetEntry("hoga.db")!.Open())
+        using (var file = File.Create(database)) entry.CopyTo(file);
         using (var restored = new Microsoft.Data.Sqlite.SqliteConnection(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
-            { DataSource = backup, Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadOnly, Pooling = false }.ToString()))
+            { DataSource = database, Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadOnly, Pooling = false }.ToString()))
         {
             restored.Open();
             using var query = restored.CreateCommand();
@@ -725,7 +730,7 @@ public sealed partial class MarketTests
 
     private sealed class MarketFactory(string? existingPath = null, int speed = 1, bool bots = false,
         bool frozen = false, bool isolateJournal = false, string? dailyReset = null, string intensity = "1.0",
-        bool throwBroadcast = false, string? summaryPath = null, int ordersPerSecond = 20, string? proxyNetwork = null, long initialCash = 10_000_000) : WebApplicationFactory<Program>
+        bool throwBroadcast = false, string? summaryPath = null, int ordersPerSecond = 20, string? proxyNetwork = null, long initialCash = 10_000_000, bool allowMissingRound = false, string? restoreRoot = null) : WebApplicationFactory<Program>
     {
         public string JournalPath { get; } = existingPath ?? (isolateJournal
             ? Path.Combine(AppContext.BaseDirectory, Guid.NewGuid().ToString("N"), "market.jsonl")
@@ -739,8 +744,9 @@ public sealed partial class MarketTests
             .ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Market:JournalPath"] = JournalPath, ["Market:AdminKey"] = Key,
-                ["Market:DatabasePath"] = JournalPath + ".db", ["Market:KeysPath"] = JournalPath + ".keys",
+                ["Market:DatabasePath"] = (restoreRoot is null ? JournalPath + ".db" : Path.Combine(restoreRoot, "hoga.db")), ["Market:KeysPath"] = (restoreRoot is null ? JournalPath + ".keys" : Path.Combine(restoreRoot, "keys")),
                 ["Operations:BackupDirectory"] = BackupDirectory,
+                ["Market:AllowMissingRoundMetadata"] = allowMissingRound.ToString(),
                 ["Market:InitialCash"] = initialCash.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["Market:OrdersPerSecond"] = ordersPerSecond.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["Market:TrustedProxyNetwork"] = proxyNetwork,
@@ -755,10 +761,11 @@ public sealed partial class MarketTests
                 if (throwBroadcast) services.AddSingleton<HubLifetimeManager<MarketHub>, ThrowingHub>();
             });
 
-        public HubConnection Connect() => new HubConnectionBuilder()
+        public HubConnection Connect(string? session = null) => new HubConnectionBuilder()
             .WithUrl(new Uri(Server.BaseAddress, "/hubs/market"), options =>
             {
                 options.Transports = HttpTransportType.LongPolling;
+                if (session is not null) options.Headers["Cookie"] = session;
                 options.HttpMessageHandlerFactory = _ => Server.CreateHandler();
             }).Build();
 
@@ -766,8 +773,7 @@ public sealed partial class MarketTests
         {
             base.Dispose(disposing);
             if (!disposing || existingPath is not null) return;
-            using var connection = new Microsoft.Data.Sqlite.SqliteConnection(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = JournalPath + ".db" }.ToString());
-            Microsoft.Data.Sqlite.SqliteConnection.ClearPool(connection);
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
             if (isolateJournal)
             {
                 var directory = Path.GetDirectoryName(JournalPath)!;

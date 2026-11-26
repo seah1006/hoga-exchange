@@ -21,7 +21,7 @@ public sealed class MarketHub : Hub
         try
         {
             var market = Context.GetHttpContext()!.RequestServices.GetRequiredService<MarketLoop>();
-            if (!await market.Subscribe(Context.ConnectionId, Context.UserIdentifier, Context.ConnectionAborted)) Context.Abort();
+            if (!await market.Subscribe(Context.ConnectionId, Context.UserIdentifier, Context.User?.FindFirst("AspNet.Identity.SecurityStamp")?.Value, Context.ConnectionAborted)) Context.Abort();
         }
         catch (Exception ex) when (ex is MarketUnavailableException or TimeoutException)
         { Context.Abort(); }

@@ -24,6 +24,7 @@ internal sealed class MarketOptions
     public long BasePrice { get; set; } = 10_000;
     public int Speed { get; set; } = 1;
     public int RequestTimeoutMs { get; set; } = 5000;
+    public bool AllowMissingRoundMetadata { get; set; }
     public string JournalPath { get; set; } = "data/journal/market.jsonl";
 
     // 서버 입력 한도(임의 지정, KRX 규칙 아님). 엔진·저널에 닿기 전에 막아 호가 합계 오버플로를 차단한다(REVIEW-5 P0-1).
@@ -127,13 +128,20 @@ internal sealed partial class MarketLoop(
         seq = _seq, stateHash = _engine.ComputeStateHash(), ledgerHash = _ledger.Hash(), restoredFromJournal = _restored
     }, ct);
 
-    internal Task<bool> Subscribe(string id, string? owner, CancellationToken ct) => Invoke(async () =>
+    internal Task<bool> Subscribe(string id, string? owner, string? stamp, CancellationToken ct) => Invoke(async () =>
     {
         using var send = CancellationTokenSource.CreateLinkedTokenSource(_stopping, ct);
         send.CancelAfter(TimeSpan.FromSeconds(1));
         try
         {
             // Subscribe in the same loop so the initial state cannot be overtaken by a change broadcast.
+            if (owner is not null)
+            {
+                using var scope = scopes.CreateScope();
+                var users = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<Member>>();
+                if (await users.FindByIdAsync(owner) is not { } member || member.SecurityStamp != stamp || _withdrawn.Contains(owner))
+                    owner = null;
+            }
             var client = hub.Clients.Client(id);
             foreach (var candle in _projection.Candles) await client.SendAsync("candle", candle, send.Token);
             foreach (var trade in _projection.Trades) await client.SendAsync("trade", trade, send.Token);
@@ -165,10 +173,16 @@ internal sealed partial class MarketLoop(
         return ValueTask.FromResult(true);
     }, ct);
 
-    private async Task<T> Invoke<T>(Func<ValueTask<T>> work, CancellationToken ct, bool readOnly = false)
+    private async Task<T> Invoke<T>(Func<ValueTask<T>> work, CancellationToken ct, bool readOnly = false, bool waitForCompletion = false)
     {
         ct.ThrowIfCancellationRequested();
         var request = new Request<T>(work, readOnly);
+        if (waitForCompletion)
+        {
+            try { await _requests.Writer.WriteAsync(request, ct); }
+            catch (ChannelClosedException ex) { throw new MarketUnavailableException(ex); }
+            return await request.Completion.Task;
+        }
         if (!_requests.Writer.TryWrite(request)) throw new MarketUnavailableException();
         try { return await request.Completion.Task.WaitAsync(TimeSpan.FromMilliseconds(configuration.Value.RequestTimeoutMs), ct); }
         catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
@@ -178,10 +192,8 @@ internal sealed partial class MarketLoop(
         }
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    public override Task StartAsync(CancellationToken cancellationToken)
     {
-        _stopping = stoppingToken;
-        metrics.ObserveQueue(() => _requests.Reader.Count);
         try
         {
             _path = Path.GetFullPath(configuration.Value.JournalPath, environment.ContentRootPath);
@@ -201,6 +213,22 @@ internal sealed partial class MarketLoop(
                 _resetTime = localTime;
                 ScheduleDailyReset(time.GetUtcNow());
             }
+            return base.StartAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _writer?.Dispose();
+            logger.LogCritical("Market startup refused ({FailureType}): check journal, matching .round, and ledger invariants", ex.GetType().Name);
+            throw;
+        }
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        _stopping = stoppingToken;
+        metrics.ObserveQueue(() => _requests.Reader.Count);
+        try
+        {
             using var timer = new PeriodicTimer(Cadence, time);
             var tick = timer.WaitForNextTickAsync(stoppingToken).AsTask();
             var ready = _requests.Reader.WaitToReadAsync(stoppingToken).AsTask();
@@ -317,6 +345,7 @@ internal sealed partial class MarketLoop(
             }
         }
         finally { _expiredRead.Release(); }
+        backup.AfterReset(time.GetUtcNow());
         await Broadcast("marketReset", new { symbol = "HOGA", atUtc = now.UtcDateTime, reason });
         foreach (var id in _online.Values.Distinct(StringComparer.Ordinal)) await PublishAccount(id);
         _snapshotPending = true;
@@ -326,9 +355,9 @@ internal sealed partial class MarketLoop(
 
     private void Restore(bool rebuildBots = false)
     {
+        LoadRound(time.GetUtcNow(), restoring: true);
         _writer = JournalWriter.OpenExisting(_path, _header);
         var projection = new MarketProjection();
-        LoadRound(time.GetUtcNow());
         var restored = Recovery.Restore(_path, expectedHeader: _header,
             observe: (command, events) =>
             {
@@ -336,6 +365,7 @@ internal sealed partial class MarketLoop(
                 _ledger.Apply(command, events);
                 if (rebuildBots) _bots?.Observe(command, events);
             });
+        _ledger.VerifyOpenHolds();
         _projection = projection;
         _engine = restored.Engine;
         _seq = restored.LastSequence;
@@ -352,7 +382,6 @@ internal sealed partial class MarketLoop(
         {
             if (await ResetMarket("Daily", now))
             {
-                backup.AfterDailyReset(time.GetUtcNow());
                 ScheduleDailyReset(now);
             }
             else _nextDailyReset = now.AddMinutes(5); // 임의 지정: avoid hammering a failing filesystem.

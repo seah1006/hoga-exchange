@@ -51,6 +51,7 @@ internal sealed class AccountLedger(long initialCash, long initialShares, long b
             if (events.Any(e => e is OrderRejected)) { entry.Rejected = true; entry.Remaining = 0; }
             else
             {
+                if (Check(order) is not null) throw new InvalidDataException("Negative ledger balance while reserving order hold.");
                 _open.Add(order.OrderId, entry);
                 if (order.Side == Side.Buy)
                 {
@@ -87,11 +88,18 @@ internal sealed class AccountLedger(long initialCash, long initialShares, long b
                 changed.Add(orderSource.AccountId);
             }
         }
+        foreach (var id in changed)
+        {
+            var b = Get(id);
+            if (b.Cash < 0 || b.Shares < 0 || b.CashHold < 0 || b.ShareHold < 0)
+                throw new InvalidDataException("Negative ledger balance or hold.");
+        }
         return changed;
 
         void Settle(string id, Trade t, long at)
         {
             if (!_open.TryGetValue(id, out var entry)) return;
+            if (t.Quantity <= 0 || t.Quantity > entry.Remaining) throw new InvalidDataException("Trade exceeds ledger order hold.");
             var source = entry.Source;
             var balance = Get(source.AccountId);
             checked
@@ -109,6 +117,26 @@ internal sealed class AccountLedger(long initialCash, long initialShares, long b
             if (entry.Remaining == 0) _open.Remove(id);
             Push(balance.Trades, new(id, source.Side.ToString(), t.Price, t.Quantity, at));
             changed.Add(source.AccountId);
+        }
+    }
+
+    internal void VerifyOpenHolds()
+    {
+        var holds = new Dictionary<string, (Int128 Cash, Int128 Shares)>(StringComparer.Ordinal);
+        foreach (var entry in _open.Values)
+        {
+            if (entry.Remaining <= 0 || entry.Remaining + entry.Filled != entry.Source.Quantity)
+                throw new InvalidDataException("Invalid open ledger order.");
+            var id = entry.Source.AccountId;
+            var (cash, shares) = holds.GetValueOrDefault(id);
+            holds[id] = entry.Source.Side == Side.Buy
+                ? (cash + (Int128)entry.Source.Price * entry.Remaining, shares) : (cash, shares + entry.Remaining);
+        }
+        foreach (var (id, balance) in _accounts)
+        {
+            var (cash, shares) = holds.GetValueOrDefault(id);
+            if (cash != balance.CashHold || shares != balance.ShareHold)
+                throw new InvalidDataException("Open ledger orders do not match holds.");
         }
     }
 
