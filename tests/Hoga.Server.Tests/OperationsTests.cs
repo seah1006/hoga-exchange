@@ -6,7 +6,6 @@ using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
 using Hoga.Server.Operations;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -103,7 +102,7 @@ public sealed class OperationsTests
         var requestLines = logs.Entries.Where(e => e.Category == typeof(SafeRequestLog).FullName).Select(e => e.Text).ToArray();
         Assert.Contains(requestLines, line => line.Contains("/api/admin/scenario returned 400", StringComparison.Ordinal));
         Assert.Contains(requestLines, line => line.Contains("(unmatched) returned 404", StringComparison.Ordinal));
-        var output = string.Join('\n', requestLines);
+        var output = string.Join('\n', logs.Entries.Select(entry => entry.Text));
         Assert.DoesNotContain(app.Key, output);
         Assert.DoesNotContain(email, output);
         Assert.DoesNotContain(cookie, output);
@@ -117,7 +116,7 @@ public sealed class OperationsTests
         Assert.Equal(500, hit.Response.StatusCode);
         var hashed = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(email)).AsSpan(0, 6));
         Assert.Contains(logs.Entries, e => e.Text.Contains(hashed, StringComparison.Ordinal));
-        Assert.DoesNotContain(logs.Entries.Where(e => e.Category == typeof(SafeRequestLog).FullName), e => e.Text.Contains(email, StringComparison.Ordinal));
+        Assert.DoesNotContain(logs.Entries, e => e.Text.Contains(email, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -180,7 +179,7 @@ public sealed class OperationsTests
             public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
             public bool IsEnabled(LogLevel logLevel) => true;
             public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
-                entries.Enqueue((category, formatter(state, exception)));
+                entries.Enqueue((category, $"{formatter(state, exception)} {exception}"));
         }
     }
 }

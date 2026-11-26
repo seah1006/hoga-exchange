@@ -213,6 +213,11 @@ internal sealed class MarketLoop(
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            logger.LogCritical("Market loop stopped unexpectedly ({FailureType})", ex.GetType().Name);
+            throw;
+        }
         finally
         {
             _requests.Writer.TryComplete();

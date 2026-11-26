@@ -5,7 +5,6 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.Logging.Console;
 
 namespace Hoga.Server.Operations;
 
@@ -25,9 +24,13 @@ internal static class OperationsRegistration
                 o.IncludeScopes = false;
             });
             // Framework diagnostics can emit raw URLs or exceptions; allow only known-safe console sources.
-            builder.Logging.AddFilter<ConsoleLoggerProvider>((category, level) =>
-                level >= LogLevel.Information && (category == typeof(SafeRequestLog).FullName ||
-                    category is "Hoga.Server.MarketLoop" or "Hoga.Server.Operations.BackupService" or "Microsoft.Hosting.Lifetime"));
+            builder.Services.PostConfigure<LoggerFilterOptions>(options =>
+            {
+                options.Rules.Clear();
+                options.AddFilter((category, level) => level >= LogLevel.Information &&
+                    (category == typeof(SafeRequestLog).FullName || category == typeof(MarketLoop).FullName ||
+                     category == typeof(BackupService).FullName));
+            });
         }
         builder.Services.AddSingleton<MarketMetrics>();
         builder.Services.Configure<HubOptions<MarketHub>>(o => o.AddFilter<ConnectionMetrics>());
