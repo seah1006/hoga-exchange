@@ -23,5 +23,5 @@ data/journal/
 .vscode/
 
 /data/ef/
-data/hoga.db*
-data/keys/
+**/data/hoga.db*
+**/data/keys/

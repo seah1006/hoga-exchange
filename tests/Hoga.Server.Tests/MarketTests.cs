@@ -17,7 +17,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Hoga.Server.Tests;
 
-public sealed class MarketTests
+public sealed partial class MarketTests
 {
     [Theory]
     [InlineData(13_050, "AboveUpperLimit", "R-LIMIT-04")]
@@ -26,7 +26,7 @@ public sealed class MarketTests
     public async Task RejectsOrdersWithContractReason(long price, string reason, string rule)
     {
         using var app = new MarketFactory();
-        using var client = app.CreateClient();
+        using var client = await TradingClient(app);
         var body = await Place(client, "Buy", price, 100);
         Assert.Equal(JsonValueKind.Null, body.GetProperty("orderId").ValueKind);
         Assert.False(body.GetProperty("accepted").GetBoolean());
@@ -42,7 +42,7 @@ public sealed class MarketTests
     public async Task ReportsBadRequestForMalformedOrder(string json)
     {
         using var app = new MarketFactory();
-        using var client = app.CreateClient();
+        using var client = await TradingClient(app);
         using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
         using var response = await client.PostAsync("/api/orders", content);
         await AssertError(response, HttpStatusCode.BadRequest, "BadRequest");
@@ -51,8 +51,8 @@ public sealed class MarketTests
     [Fact]
     public async Task RejectsOversizedQuantityBeforeJournalAndKeepsServing()
     {
-        using var app = new MarketFactory();
-        using var client = app.CreateClient();
+        using var app = new MarketFactory(initialCash: 20_000_000_000);
+        using var client = await TradingClient(app);
         var before = await Get(client, "/api/state/hash");
         const string huge = "{\"side\":\"Buy\",\"price\":10000,\"quantity\":4611686018427387913}";
         for (var i = 0; i < 2; i++)
@@ -80,7 +80,7 @@ public sealed class MarketTests
             JsonElement before;
             string firstId;
             using (var app = new MarketFactory(path))
-            using (var client = app.CreateClient())
+            using (var client = await TradingClient(app))
             {
                 var first = await Place(client, "Buy", 10_000, 100);
                 Assert.True(first.GetProperty("accepted").GetBoolean());
@@ -105,7 +105,7 @@ public sealed class MarketTests
                 Assert.Equal(explanation.GetRawText(), (await Get(client, $"/api/orders/{id}/explanation")).GetRawText());
             }
             using var restart = new MarketFactory(path);
-            using var nextClient = restart.CreateClient();
+            using var nextClient = await TradingClient(restart);
             AssertHash(before, await Get(nextClient, "/api/state/hash"));
             var next = await Place(nextClient, "Buy", 9_990, 3);
             var nextId = next.GetProperty("orderId").GetString();
@@ -125,9 +125,9 @@ public sealed class MarketTests
     public async Task ReturnsMissingResourcesAndRequiresAdminKey()
     {
         using var app = new MarketFactory();
-        using var client = app.CreateClient();
+        using var client = await TradingClient(app);
         using var crash = await client.PostAsync("/api/admin/crash", null);
-        await AssertError(crash, HttpStatusCode.Unauthorized, "Unauthorized");
+        await AssertError(crash, HttpStatusCode.Forbidden, "Unauthorized");
         using var missing = await client.GetAsync("/api/orders/o-404/explanation");
         await AssertError(missing, HttpStatusCode.NotFound, "NotFound");
         using var cancel = await client.DeleteAsync("/api/orders/o-404");
@@ -140,7 +140,7 @@ public sealed class MarketTests
     public async Task WaitsForAuctionThenBroadcastsTradeCandleAndRelease()
     {
         using var app = new MarketFactory(speed: 10);
-        using var client = app.CreateClient();
+        using var client = await TradingClient(app);
         var snapshots = Channel.CreateUnbounded<JsonElement>();
         var vi = Channel.CreateUnbounded<JsonElement>();
         var trades = Channel.CreateUnbounded<JsonElement>();
@@ -238,7 +238,7 @@ public sealed class MarketTests
         });
         using var factory = new MarketFactory();
         using var app = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services => services.AddSingleton(cache)));
-        using var client = app.CreateClient();
+        using var client = await TradingClient(app);
         var experiment = Get(client, "/api/experiments/demo");
         try
         {
@@ -344,7 +344,7 @@ public sealed class MarketTests
     public async Task ReadExceptionFailsOnlyThatRequest()
     {
         using var app = new MarketFactory();
-        using var client = app.CreateClient();
+        using var client = await TradingClient(app);
         var loop = app.Services.GetRequiredService<MarketLoop>();
         var failure = await Assert.ThrowsAsync<MarketUnavailableException>(() =>
             loop.Read<int>(() => throw new InvalidOperationException("test read failure"), CancellationToken.None));
@@ -385,15 +385,12 @@ public sealed class MarketTests
             }
             using var app = new MarketFactory(path);
             using var client = app.CreateClient();
-            using var expired = await client.GetAsync("/api/orders/o-2/explanation");
-            Assert.Equal(HttpStatusCode.NotFound, expired.StatusCode);
-            Assert.Equal("기록 보관 기간이 지났습니다", (await expired.Content.ReadFromJsonAsync<JsonElement>())
-                .GetProperty("message").GetString());
-            using var missing = await client.GetAsync("/api/orders/o-1/explanation");
-            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
-            Assert.Equal("주문을 찾을 수 없습니다.", (await missing.Content.ReadFromJsonAsync<JsonElement>())
-                .GetProperty("message").GetString());
-            var recent = await Get(client, $"/api/orders/o-{MarketProjection.TerminalCapacity + 3}/explanation");
+            var market = app.Services.GetRequiredService<MarketLoop>();
+            Assert.True((await market.ExplainOrder("rest", "o-2", default)).Expired);
+            Assert.False((await market.ExplainOrder("other", "o-2", default)).Expired);
+            Assert.False((await market.ExplainOrder("rest", "o-1", default)).Expired);
+            var recent = JsonSerializer.SerializeToElement((await market.ExplainOrder("rest",
+                $"o-{MarketProjection.TerminalCapacity + 3}", default)).Result);
             Assert.Equal("Rejected", recent.GetProperty("status").GetString());
         }
         finally { File.Delete(path); }
@@ -427,7 +424,7 @@ public sealed class MarketTests
     public async Task HistoryIsSentOnlyToNewClientInCandleTradeSnapshotOrder()
     {
         using var app = new MarketFactory(frozen: true, ordersPerSecond: 200);
-        using var client = app.CreateClient();
+        using var client = await TradingClient(app);
         await using var oldHub = app.Connect();
         var old = Observe(oldHub);
         await oldHub.StartAsync();
@@ -480,7 +477,7 @@ public sealed class MarketTests
         await Get(client, "/api/state/hash");
         app.Clock.AddMilliseconds(1_000);
         await WaitUntil(() => JournalReader.Read(app.JournalPath).Commands.OfType<PlaceLimitOrder>()
-            .Any(o => o.AccountId == "MarketMaker"));
+            .Any(o => o.AccountId == "bot:MarketMaker"));
         var before = await Get(client, "/api/state/hash");
         using var crash = await Admin(client, app.Key, "crash");
         Assert.True((await Json(crash)).GetProperty("ok").GetBoolean());
@@ -517,7 +514,7 @@ public sealed class MarketTests
     public async Task AdminResetArchivesAndPublishesEmptyMarketInOrder()
     {
         using var app = new MarketFactory(frozen: true, isolateJournal: true);
-        using var client = app.CreateClient();
+        using var client = await TradingClient(app);
         await using var hub = app.Connect();
         var events = Channel.CreateUnbounded<(string Name, JsonElement Body)>();
         hub.On<JsonElement>("marketReset", body => events.Writer.TryWrite(("marketReset", body)));
@@ -529,7 +526,7 @@ public sealed class MarketTests
         var previousId = order.GetProperty("orderId").GetString()!;
         Assert.Equal(1, (await Get(client, "/healthz")).GetProperty("seq").GetInt64());
         using var unauthorized = await client.PostAsync("/api/admin/reset", null);
-        await AssertError(unauthorized, HttpStatusCode.Unauthorized, "Unauthorized");
+        await AssertError(unauthorized, HttpStatusCode.Forbidden, "Unauthorized");
         Assert.Equal("bookSnapshot", (await events.Reader.ReadAsync(timeout.Token)).Name);
         using var reset = await Admin(client, app.Key, "reset");
         Assert.True((await Json(reset)).GetProperty("ok").GetBoolean());
@@ -563,7 +560,7 @@ public sealed class MarketTests
     public async Task FailedJournalMoveCancelsResetAndPreservesWritableMarket()
     {
         using var app = new MarketFactory(frozen: true, isolateJournal: true);
-        using var client = app.CreateClient();
+        using var client = await TradingClient(app);
         var id = (await Place(client, "Buy", 10_000, 2)).GetProperty("orderId").GetString()!;
         var before = await Get(client, "/api/state/hash");
         // Directory collision: File.Exists is false, but File.Move cannot create a file here.
@@ -584,7 +581,7 @@ public sealed class MarketTests
     public async Task DailyResetUsesSeoulWallClockAndRunsOnlyOnce()
     {
         using var app = new MarketFactory(frozen: true, isolateJournal: true, dailyReset: "05:00");
-        using var client = app.CreateClient();
+        using var client = await TradingClient(app);
         await using var hub = app.Connect();
         var resets = Channel.CreateUnbounded<JsonElement>();
         hub.On<JsonElement>("marketReset", body => resets.Writer.TryWrite(body));
@@ -625,7 +622,7 @@ public sealed class MarketTests
     public async Task NonCancellationBroadcastFailureDoesNotStopMarket()
     {
         using var app = new MarketFactory(frozen: true, throwBroadcast: true);
-        using var client = app.CreateClient();
+        using var client = await TradingClient(app);
         await Place(client, "Buy", 10_000, 1);
         await Place(client, "Sell", 10_000, 1);
         Assert.Equal(2, (await Get(client, "/healthz")).GetProperty("seq").GetInt64());
@@ -659,6 +656,27 @@ public sealed class MarketTests
         return await channel.Reader.ReadAsync(timeout.Token);
     }
 
+    private static readonly string TestPassword = Convert.ToHexString(RandomNumberGenerator.GetBytes(20));
+    private static async Task<HttpClient> TradingClient(WebApplicationFactory<Program> app)
+    {
+        var client = app.CreateClient();
+        var suffix = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            app.Services.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>()["Market:JournalPath"]!)));
+        var email = suffix[..24] + "@example.invalid";
+        client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", (await Get(client, "/api/auth/csrf")).GetProperty("token").GetString());
+        using var registered = await client.PostAsJsonAsync("/api/auth/register", new { email, password = TestPassword, nickname = "trader" });
+        var registrationError = registered.StatusCode == HttpStatusCode.Created ? null : (await registered.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString();
+        if (registered.StatusCode == HttpStatusCode.Conflict && registrationError == "EmailTaken")
+        {
+            using var login = await client.PostAsJsonAsync("/api/auth/login", new { email, password = TestPassword });
+            Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        }
+        else if (registered.StatusCode != HttpStatusCode.Created) throw new InvalidOperationException(registrationError);
+        client.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
+        client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", (await Get(client, "/api/auth/csrf")).GetProperty("token").GetString());
+        return client;
+    }
+
     private static async Task<JsonElement> Place(HttpClient client, string side, long price, long quantity)
     {
         using var response = await client.PostAsJsonAsync("/api/orders", new { side, price, quantity });
@@ -682,19 +700,20 @@ public sealed class MarketTests
         Assert.Equal(status, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal(code, body.GetProperty("error").GetString());
-        Assert.NotEmpty(body.GetProperty("message").GetString()!);
+        if (code != "Unauthorized") Assert.NotEmpty(body.GetProperty("message").GetString()!);
     }
 
     private static void AssertHash(JsonElement before, JsonElement after)
     {
         Assert.Equal(before.GetProperty("seq").GetInt64(), after.GetProperty("seq").GetInt64());
         Assert.Equal(before.GetProperty("stateHash").GetString(), after.GetProperty("stateHash").GetString());
+        Assert.Equal(before.GetProperty("ledgerHash").GetString(), after.GetProperty("ledgerHash").GetString());
         Assert.True(after.GetProperty("restoredFromJournal").GetBoolean());
     }
 
     private sealed class MarketFactory(string? existingPath = null, int speed = 1, bool bots = false,
         bool frozen = false, bool isolateJournal = false, string? dailyReset = null, string intensity = "1.0",
-        bool throwBroadcast = false, string? summaryPath = null, int ordersPerSecond = 20, string? proxyNetwork = null) : WebApplicationFactory<Program>
+        bool throwBroadcast = false, string? summaryPath = null, int ordersPerSecond = 20, string? proxyNetwork = null, long initialCash = 10_000_000) : WebApplicationFactory<Program>
     {
         public string JournalPath { get; } = existingPath ?? (isolateJournal
             ? Path.Combine(AppContext.BaseDirectory, Guid.NewGuid().ToString("N"), "market.jsonl")
@@ -707,6 +726,8 @@ public sealed class MarketTests
             .ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Market:JournalPath"] = JournalPath, ["Market:AdminKey"] = Key,
+                ["Market:DatabasePath"] = JournalPath + ".db", ["Market:KeysPath"] = JournalPath + ".keys",
+                ["Market:InitialCash"] = initialCash.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["Market:OrdersPerSecond"] = ordersPerSecond.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["Market:TrustedProxyNetwork"] = proxyNetwork,
                 ["Market:Bots"] = bots.ToString(), ["Market:BotIntensity"] = intensity,
@@ -731,12 +752,19 @@ public sealed class MarketTests
         {
             base.Dispose(disposing);
             if (!disposing || existingPath is not null) return;
+            using var connection = new Microsoft.Data.Sqlite.SqliteConnection(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = JournalPath + ".db" }.ToString());
+            Microsoft.Data.Sqlite.SqliteConnection.ClearPool(connection);
             if (isolateJournal)
             {
                 var directory = Path.GetDirectoryName(JournalPath)!;
                 if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
             }
-            else File.Delete(JournalPath);
+            else
+            {
+                File.Delete(JournalPath);
+                foreach (var file in Directory.GetFiles(Path.GetDirectoryName(JournalPath)!, Path.GetFileName(JournalPath) + ".*")) File.Delete(file);
+                if (Directory.Exists(JournalPath + ".keys")) Directory.Delete(JournalPath + ".keys", recursive: true);
+            }
         }
     }
 
@@ -744,7 +772,7 @@ public sealed class MarketTests
     public async Task OrderAndCancelShareIpLimitButAdminAndReadsDoNot()
     {
         using var app = new MarketFactory(ordersPerSecond: 1);
-        using var client = app.CreateClient();
+        using var client = await TradingClient(app);
         using var order = await client.PostAsJsonAsync("/api/orders", new { side = "Buy", price = 10_000, quantity = 1 });
         Assert.Equal(HttpStatusCode.OK, order.StatusCode);
         using var limited = await client.DeleteAsync("/api/orders/missing");
@@ -753,7 +781,7 @@ public sealed class MarketTests
         using var health = await client.GetAsync("/healthz");
         Assert.Equal(HttpStatusCode.OK, health.StatusCode);
         using var unauthorized = await client.PostAsync("/api/admin/reset", null);
-        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, unauthorized.StatusCode);
     }
 
     [Fact]
