@@ -24,7 +24,7 @@ export interface Candle { symbol: 'HOGA'; startMs: number; open: number; high: n
 interface ViEventFields { kind: ViKind; referencePrice: number; triggerPrice: number; atMs: number; ruleId: string }
 export type ViEvent = ViEventFields & ({ type: 'Triggered' } | { type: 'Released'; auctionPrice: number })
 export interface MarketReset { symbol: 'HOGA'; atUtc: string; reason: 'Daily' | 'Admin' }
-export interface Messages { marketReset: MarketReset; bookSnapshot: BookSnapshot; trade: Trade; candle: Candle; viEvent: ViEvent }
+export interface Messages { accountUpdate: Account; marketReset: MarketReset; bookSnapshot: BookSnapshot; trade: Trade; candle: Candle; viEvent: ViEvent }
 export type MarketMessage = { [K in keyof Messages]: { type: K; data: Messages[K] } }[keyof Messages]
 export interface OrderRequest { side: Side; price: number; quantity: number }
 export type OrderResponse =
@@ -59,3 +59,18 @@ export interface ExperimentSummary {
   caveat: string
 }
 export interface StateHash { seq: number; stateHash: string; restoredFromJournal: boolean }
+
+export interface User { id: string; nickname: string; isAdmin: boolean }
+export interface Profile extends User { email: string }
+export interface Login { email: string; password: string }
+export interface Registration extends Login { nickname: string }
+export interface Account {
+  round: string; cash: number; cashOnHold: number; shares: number; sharesOnHold: number
+  initialValuation: number; lastPrice: number; valuation: number; pnl: number; returnBp: number
+}
+export interface AccountOrder extends OrderRequest {
+  orderId: string; filledQuantity: number; remainingQuantity: number; status: Explanation['status']; createdAtMs: number
+}
+export interface AccountTrade extends OrderRequest { orderId: string; logicalTimeMs: number }
+export interface RankingPosition { rank: number; returnBp: number; valuation: number }
+export interface Ranking { round: string; updatedAtUtc: string; entries: (RankingPosition & { nickname: string })[]; me: RankingPosition | null }

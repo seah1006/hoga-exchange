@@ -1,11 +1,11 @@
 import { HubConnectionBuilder } from '@microsoft/signalr'
-import type { CancelResponse, Experiment, ExperimentSummary, Explanation, MarketMessage, Messages, OrderRequest, OrderResponse, Scenario, StateHash } from './contract'
-import type { MarketConnection, MarketSource } from './marketSource'
+import type { Account, AccountOrder, AccountTrade, Login, Profile, Ranking, Registration, User, CancelResponse, Experiment, ExperimentSummary, Explanation, MarketMessage, Messages, OrderRequest, OrderResponse, Scenario, StateHash } from './contract'
+import type { MarketConnection, MemberSource } from './marketSource'
 import { readAdminKey } from './adminKey'
 
 // SignalR 자동 재연결은 첫 접속 실패나 재시도 소진 이후의 접속을 다루지 않는다.
 const restartDelayMs = 5_000
-const events = ['bookSnapshot', 'trade', 'candle', 'viEvent', 'marketReset'] as const
+const events = ['bookSnapshot', 'trade', 'candle', 'viEvent', 'marketReset', 'accountUpdate'] as const
 
 export interface MarketHub {
   on<K extends keyof Messages>(name: K, handler: (data: Messages[K]) => void): void
@@ -32,7 +32,7 @@ export function marketErrorMessage(error: unknown) {
   return error instanceof MarketApiError ? error.message : '요청을 완료하지 못했습니다.'
 }
 
-export class ServerMarketSource implements MarketSource {
+export class ServerMarketSource implements MemberSource {
   private readonly base: string
   private readonly fetcher: typeof fetch
   private readonly makeHub: (url: string) => MarketHub
@@ -40,6 +40,7 @@ export class ServerMarketSource implements MarketSource {
   private readonly connectionListeners = new Set<(status: MarketConnection) => void>()
   private status: MarketConnection = 'connecting'
   private session?: HubSession
+  private csrf?: Promise<string>
 
   constructor({ base = '', fetcher = (input, init) => fetch(input, init), createHub: makeHub = createHub }: ServerOptions = {}) {
     this.base = base.trim().replace(/\/+$/, '')
@@ -109,25 +110,27 @@ export class ServerMarketSource implements MarketSource {
     start()
   }
 
-  private async request<T>(path: string, { method = 'GET', body, admin = false }: { method?: string; body?: unknown; admin?: boolean } = {}): Promise<T> {
+  private async request<T>(path: string, { method = 'GET', body, admin = false, token }: { method?: string; body?: unknown; admin?: boolean; token?: string } = {}): Promise<T> {
     const headers = new Headers({ Accept: 'application/json' })
+    if (token) headers.set('X-CSRF-TOKEN', token)
     if (body !== undefined) headers.set('Content-Type', 'application/json')
     const key = admin ? readAdminKey() : ''
     if (key) headers.set('X-Admin-Key', key)
     let response: Response
     try {
-      response = await this.fetcher(`${this.base}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
+      response = await this.fetcher(`${this.base}${path}`, { method, headers, credentials: 'include', body: body === undefined ? undefined : JSON.stringify(body) })
     } catch {
       throw new MarketApiError(0, 'NetworkError', '서버에 연결할 수 없습니다.')
     }
     if (!response.ok) {
-      if (response.status === 429) throw new MarketApiError(429, 'TooManyRequests', '요청이 너무 잦습니다')
+
       const data: unknown = await response.json().catch(() => null)
-      const code = data && typeof data === 'object' && 'error' in data && typeof data.error === 'string' ? data.error : 'HttpError'
-      const message = data && typeof data === 'object' && 'message' in data && typeof data.message === 'string' && data.message.trim()
+      const code = data && typeof data === 'object' && 'error' in data && typeof data.error === 'string' ? data.error : response.status === 429 ? 'TooManyRequests' : 'HttpError'
+      const message = !path.startsWith('/api/auth/') && data && typeof data === 'object' && 'message' in data && typeof data.message === 'string' && data.message.trim()
         ? data.message : `서버 요청에 실패했습니다 (HTTP ${response.status}).`
-      throw new MarketApiError(response.status, code, message)
+      throw new MarketApiError(response.status, code, response.status === 429 ? '요청이 너무 잦습니다' : message)
     }
+    if (response.status === 204) return undefined as T
     try {
       return await response.json() as T
     } catch {
@@ -144,12 +147,69 @@ export class ServerMarketSource implements MarketSource {
     }
   }
 
-  placeOrder(order: OrderRequest) { return this.request<OrderResponse>('/api/orders', { method: 'POST', body: order }) }
-  cancelOrder(orderId: string) { return this.request<CancelResponse>(`/api/orders/${encodeURIComponent(orderId)}`, { method: 'DELETE' }) }
+  refreshCsrf() {
+    const pending = this.request<{ token: string }>('/api/auth/csrf').then(({ token }) => {
+      if (typeof token !== 'string' || !token) throw new MarketApiError(0, 'InvalidResponse', '보안 토큰을 받을 수 없습니다.')
+      return token
+    })
+    this.csrf = pending
+    void pending.catch(() => { if (this.csrf === pending) this.csrf = undefined })
+    return pending
+  }
+
+  private async mutate<T>(path: string, options: { method: 'POST' | 'DELETE'; body?: unknown; admin?: boolean }) {
+    const pending = this.csrf ?? this.refreshCsrf()
+    try {
+      return await this.request<T>(path, { ...options, token: await pending })
+    } catch (error) {
+      if (!(error instanceof MarketApiError) || error.status !== 400 || error.code !== 'BadCsrfToken') throw error
+      const renewed = this.csrf !== pending && this.csrf ? this.csrf : this.refreshCsrf()
+      return this.request<T>(path, { ...options, token: await renewed })
+    }
+  }
+
+  private async sessionChanged() {
+    this.csrf = undefined
+    const old = this.session
+    if (old) {
+      this.session = undefined
+      clearTimeout(old.retry)
+      this.setStatus('syncing')
+      void old.hub.stop().catch(() => { /* 이전 세션은 무시한다. */ })
+      if (this.listeners.size) this.connect()
+    }
+    // 쿠키 변경이 끝났다. 재발급 실패 시 다음 변경 요청에서 다시 시도한다.
+    await this.refreshCsrf().catch(() => undefined)
+  }
+
+  async getMe() {
+    try { return await this.request<Profile>('/api/auth/me') }
+    catch (error) { if (error instanceof MarketApiError && error.status === 401) return null; throw error }
+  }
+  async login(data: Login) {
+    const user = await this.mutate<User>('/api/auth/login', { method: 'POST', body: data })
+    await this.sessionChanged()
+    return user
+  }
+  async register(data: Registration) {
+    const user = await this.mutate<User>('/api/auth/register', { method: 'POST', body: data })
+    await this.sessionChanged()
+    return user
+  }
+  async logout() { await this.mutate<void>('/api/auth/logout', { method: 'POST' }); await this.sessionChanged() }
+  async deleteMe(password: string) { await this.mutate<void>('/api/auth/me', { method: 'DELETE', body: { password } }); await this.sessionChanged() }
+  getAccount() { return this.request<Account>('/api/account') }
+  getAccountOrders() { return this.request<AccountOrder[]>('/api/account/orders') }
+  getAccountTrades() { return this.request<AccountTrade[]>('/api/account/trades') }
+  getRanking(round?: string) { return this.lookup<Ranking>(round ? `/api/ranking/${encodeURIComponent(round)}` : '/api/ranking') }
+  getRankingRounds() { return this.request<string[]>('/api/ranking/rounds') }
+
+  placeOrder(order: OrderRequest) { return this.mutate<OrderResponse>('/api/orders', { method: 'POST', body: order }) }
+  cancelOrder(orderId: string) { return this.mutate<CancelResponse>(`/api/orders/${encodeURIComponent(orderId)}`, { method: 'DELETE' }) }
   getExplanation(orderId: string) { return this.lookup<Explanation>(`/api/orders/${encodeURIComponent(orderId)}/explanation`) }
   getExperimentSummary() { return this.request<ExperimentSummary>('/api/experiments/summary') }
   getExperiment(id: string) { return this.lookup<Experiment>(`/api/experiments/${encodeURIComponent(id)}`) }
-  runScenario(name: Scenario) { return this.request<{ ok: boolean }>('/api/admin/scenario', { method: 'POST', body: { name }, admin: true }) }
-  crash() { return this.request<{ ok: boolean }>('/api/admin/crash', { method: 'POST', admin: true }) }
+  runScenario(name: Scenario) { return this.mutate<{ ok: boolean }>('/api/admin/scenario', { method: 'POST', body: { name }, admin: true }) }
+  crash() { return this.mutate<{ ok: boolean }>('/api/admin/crash', { method: 'POST', admin: true }) }
   getStateHash() { return this.request<StateHash>('/api/state/hash') }
 }

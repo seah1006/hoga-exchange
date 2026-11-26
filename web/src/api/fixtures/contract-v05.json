@@ -1,0 +1,6 @@
+{
+  "profile": { "id": "u-1", "nickname": "목 참가자", "email": "member@example.invalid", "isAdmin": false },
+  "account": { "round": "2026-11-26", "cash": 9000000, "cashOnHold": 500000, "shares": 1100, "sharesOnHold": 0, "initialValuation": 20000000, "lastPrice": 10050, "valuation": 20555000, "pnl": 555000, "returnBp": 277 },
+  "ranking": { "round": "2026-11-26", "updatedAtUtc": "2026-11-26T02:00:00Z", "entries": [{ "rank": 1, "nickname": "목 참가자", "returnBp": 277, "valuation": 20555000 }], "me": { "rank": 1, "returnBp": 277, "valuation": 20555000 } },
+  "rounds": ["2026-11-25"]
+}
