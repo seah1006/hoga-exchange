@@ -180,10 +180,10 @@
 |---|---|---|
 | `GET /api/auth/csrf` | - | `{ "token": "…" }` |
 | `POST /api/auth/register` | `{ "email", "password", "nickname" }` | 201 사용자 객체(로그인 상태가 됨). 400 `InvalidEmail`·`WeakPassword`(10자 이상, 임의 지정)·`InvalidNickname`(2~16자), 409 `EmailTaken`·`NicknameTaken` |
-| `POST /api/auth/login` | `{ "email", "password" }` | 200 사용자 객체. 401 `InvalidCredentials`, 429 `LockedOut`(5회 실패 시 5분, 임의 지정) |
+| `POST /api/auth/login` | `{ "email", "password" }` | 200 사용자 객체. 401 `InvalidCredentials`(없는 이메일·틀린 비밀번호·잠긴 계정 모두 같은 응답과 비슷한 처리 시간, REVIEW-8), 429 `TooManyRequests`(IP·이메일별 시도 제한, 임의 지정) |
 | `POST /api/auth/logout` | - | 204 |
 | `GET /api/auth/me` | - | 200 `{ "id", "nickname", "email", "isAdmin" }` / 401 |
-| `DELETE /api/auth/me` | `{ "password" }` | 204 탈퇴(현재 라운드 주문 취소 후 계정 삭제, 라운드 기록의 닉네임은 "탈퇴한 사용자") |
+| `DELETE /api/auth/me` | `{ "password" }` | 204 탈퇴(비밀번호 확인 시도 제한, 초과 시 429)(현재 라운드 주문 취소 후 계정 삭제, 라운드 기록의 닉네임은 "탈퇴한 사용자") |
 
 ### 주문 (변경)
 - `POST /api/orders`, `DELETE /api/orders/{id}`, `GET /api/orders/{id}/explanation`은 로그인 필수. 주문의 소유자만 취소·조회.
