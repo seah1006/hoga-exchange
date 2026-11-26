@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
-using System.IO.Compression;
+using System.Text.Json;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
@@ -10,6 +10,7 @@ using Hoga.Server.Operations;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -45,13 +46,20 @@ public sealed class OperationsTests
     public async Task MetricsAreParseableAndCountAcceptedRejectedTradesAndBothStages()
     {
         using var app = new OperationsFactory();
-        using var client = app.CreateClient();
+        var options = new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") };
+        using var client = app.CreateClient(options);
+        using var seller = app.CreateClient(options);
+        using var anonymous = app.CreateClient(options);
         client.DefaultRequestHeaders.Add("X-Admin-Key", app.Key);
         var baseline = await client.GetStringAsync("/metrics");
         Assert.Contains("hoga_orders_accepted_total 0\n", baseline);
-        foreach (var (side, price) in new[] { ("Buy", 10000), ("Sell", 10000), ("Buy", 10001) })
+        using var unauthorized = await anonymous.PostAsJsonAsync("/api/orders", new { side = "Buy", price = 10000, quantity = 1 });
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+        await Register(client, "Buyer");
+        await Register(seller, "Seller");
+        foreach (var (trader, side, price) in new[] { (client, "Buy", 10000), (seller, "Sell", 10000), (client, "Buy", 10001) })
         {
-            using var order = await client.PostAsJsonAsync("/api/orders", new { side, price, quantity = 1 });
+            using var order = await trader.PostAsJsonAsync("/api/orders", new { side, price, quantity = 1 });
             order.EnsureSuccessStatusCode();
         }
         using var scrape = await client.GetAsync("/metrics");
@@ -119,31 +127,59 @@ public sealed class OperationsTests
         Assert.DoesNotContain(logs.Entries, e => e.Text.Contains(email, StringComparison.Ordinal));
     }
 
+    private static async Task Register(HttpClient client, string nickname)
+    {
+        async Task Csrf()
+        {
+            client.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
+            var response = await client.GetFromJsonAsync<JsonElement>("/api/auth/csrf");
+            client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", response.GetProperty("token").GetString());
+        }
+        await Csrf();
+        using var result = await client.PostAsJsonAsync("/api/auth/register", new
+        { email = $"{Guid.NewGuid():N}@example.invalid", password = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)), nickname });
+        Assert.Equal(HttpStatusCode.Created, result.StatusCode);
+        await Csrf();
+    }
+
     [Fact]
-    public async Task BackupRetainsSevenSeoulDatesAndSkipsAbsentDatabaseOrSidecars()
+    public async Task BackupRetainsSevenSeoulDatesAndCopiesCommittedWalRows()
     {
         using var logs = new LogCapture();
-        using var app = new OperationsFactory(logs);
-        var services = app.Services;
-        var service = services.GetRequiredService<BackupService>();
+        using var app = new OperationsFactory();
+        using var environmentHost = new OperationsFactory();
+        var environment = environmentHost.Services.GetRequiredService<IWebHostEnvironment>();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        { ["Market:DatabasePath"] = app.Database, ["Operations:BackupDirectory"] = app.Backups }).Build();
+        using var loggerFactory = LoggerFactory.Create(b => b.AddProvider(logs));
+        using var service = new BackupService(configuration, environment, TimeProvider.System,
+            new OnlineSqliteSnapshot(), loggerFactory.CreateLogger<BackupService>());
         var earliest = DateTimeOffset.Parse("2026-11-01T15:30:00Z", CultureInfo.InvariantCulture);
         await service.RunOnce(earliest);
         Assert.False(Directory.Exists(app.Backups));
         Assert.Contains(logs.Entries, entry => entry.Text.Contains("database missing", StringComparison.Ordinal));
-        // gzip of a SQLite database created with CREATE TABLE checks and INSERT of one fixture row.
-        const string fixture = "H4sIAAAAAAAACu3XMQrCUAwG4LwqDoLUTcQlo4K4eAGrPKRYResb7FjrKxYrQq3i4jG8hhfxOh5ApLq46CA4+H+QQEIyZMx04kSp5nCTrP2U21QmIajDTETGI54EEeVf6ncMap0upfuweSbz/MEGAAAAAAAAwN8bi0KlWhXH1J/HOljqYLXNstFzpaUkK6vrSM56XI8WbI+U7EuXx649tFyPB9Jr8t6Pd5qVnKlG9ptfybz++jYAAAAAAAAA+KaiyFEtjA7pLtE3aQ/rUgAgAAA=";
-        using (var source = new GZipStream(new MemoryStream(Convert.FromBase64String(fixture)), CompressionMode.Decompress))
-        await using (var file = File.Create(app.Database)) await source.CopyToAsync(file);
-        await File.WriteAllTextAsync(app.Database + "-wal", "");
-        await service.RunOnce(earliest);
-        Assert.Empty(Directory.EnumerateFiles(app.Backups));
-        File.Delete(app.Database + "-wal");
+
+        using var source = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = app.Database, Pooling = false }.ToString());
+        source.Open();
+        using var command = source.CreateCommand();
+        command.CommandText = "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE checks (value INTEGER); INSERT INTO checks VALUES (42);";
+        command.ExecuteNonQuery();
+        Assert.True(File.Exists(app.Database + "-wal"));
         for (var i = 0; i < 9; i++) await service.RunOnce(earliest.AddDays(i));
         var actual = Directory.GetFiles(app.Backups).Order(StringComparer.Ordinal).ToArray();
         Assert.Equal(7, actual.Length);
         Assert.Equal("hoga-20261104.db", Path.GetFileName(actual[0]));
         Assert.Equal("hoga-20261110.db", Path.GetFileName(actual[^1]));
-        Assert.Equal(await File.ReadAllBytesAsync(app.Database), await File.ReadAllBytesAsync(actual[^1]));
+        using (var restored = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = actual[^1], Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString()))
+        {
+            restored.Open();
+            using var read = restored.CreateCommand();
+            read.CommandText = "PRAGMA integrity_check;";
+            Assert.Equal("ok", read.ExecuteScalar());
+            read.CommandText = "SELECT value FROM checks;";
+            Assert.Equal(42L, read.ExecuteScalar());
+        }
         await service.RunOnce(earliest.AddDays(8));
         Assert.Equal(actual, Directory.GetFiles(app.Backups).Order(StringComparer.Ordinal));
     }
@@ -159,13 +195,15 @@ public sealed class OperationsTests
             {
                 ["Market:AdminKey"] = Key, ["Market:JournalPath"] = Path.Combine(_directory, "journal.jsonl"),
                 ["Market:DatabasePath"] = Database, ["Market:TrustedProxyNetwork"] = "172.18.0.0/24", ["Market:Bots"] = "false",
-                ["Operations:BackupDirectory"] = Backups, ["Operations:AllowOfflineDatabaseCopy"] = "true"
+                ["Operations:BackupDirectory"] = Backups, ["Market:KeysPath"] = Path.Combine(_directory, "keys")
             })).ConfigureLogging(logging => { if (logs is not null) logging.AddProvider(logs); });
 
         protected override void Dispose(bool disposing)
         {
             base.Dispose(disposing);
-            if (disposing && Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);
+            if (!disposing) return;
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);
         }
     }
 

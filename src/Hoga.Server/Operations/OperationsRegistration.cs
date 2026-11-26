@@ -34,7 +34,7 @@ internal static class OperationsRegistration
         }
         builder.Services.AddSingleton<MarketMetrics>();
         builder.Services.Configure<HubOptions<MarketHub>>(o => o.AddFilter<ConnectionMetrics>());
-        builder.Services.AddSingleton<ISqliteSnapshot, OfflineFileSnapshot>(); // TASK-011: replace with online implementation.
+        builder.Services.AddSingleton<ISqliteSnapshot, OnlineSqliteSnapshot>();
         builder.Services.AddSingleton<BackupService>();
         builder.Services.AddSingleton<IRoundBackupTrigger>(sp => sp.GetRequiredService<BackupService>());
         builder.Services.AddHostedService(sp => sp.GetRequiredService<BackupService>());
