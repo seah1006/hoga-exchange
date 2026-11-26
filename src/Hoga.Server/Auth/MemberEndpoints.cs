@@ -14,9 +14,11 @@ internal static partial class Members
         Id = "u-" + Guid.NewGuid().ToString("N"), Email = email, UserName = email,
         Nickname = nickname, NormalizedNickname = nickname.Normalize().ToUpperInvariant()
     };
+    // 가입·로그인·탈퇴가 같은 상한을 써야 긴 비밀번호로 가입한 뒤 로그인이 막히지 않는다(REVIEW-8 재확인, 128자 임의 지정).
+    internal const int MaxPasswordLength = 128;
     private static string? Validate(string email, string password, string nickname) =>
         email.Length is 0 or > 254 || !new EmailAddressAttribute().IsValid(email) ? "InvalidEmail" :
-        password.Length < 10 ? "WeakPassword" : nickname.Length is < 2 or > 16 || nickname.Any(char.IsControl) ||
+        password.Length is < 10 or > MaxPasswordLength ? "WeakPassword" : nickname.Length is < 2 or > 16 || nickname.Any(char.IsControl) ||
             nickname == DeletedNickname ? "InvalidNickname" : null;
     private static async Task<T?> Body<T>(HttpContext context) where T : class
     {
@@ -81,7 +83,7 @@ internal static partial class Members
         if (await Body<Credentials>(c) is not { } request) return Error(400, "BadRequest");
         var email = request.Email?.Trim() ?? "";
         var password = request.Password ?? "";
-        if (email.Length > 254 || password.Length > 1024) return Error(401, "InvalidCredentials");
+        if (email.Length > 254 || password.Length > MaxPasswordLength) return Error(401, "InvalidCredentials");
         var key = users.NormalizeEmail(email) ?? "";
         using var quota = attempts.Acquire(key);
         if (!quota.IsAcquired) return Error(429, "TooManyRequests");
@@ -122,7 +124,7 @@ internal static partial class Members
         using var quota = attempts.Acquire(user.Id, withdraw: true);
         using var slot = attempts.AcquireHash();
         if (!quota.IsAcquired || !slot.IsAcquired) return Error(429, "TooManyRequests");
-        if (await Body<Credentials>(c) is not { Password: { Length: <= 1024 } password } || !await users.CheckPasswordAsync(user, password))
+        if (await Body<Credentials>(c) is not { Password: { Length: <= MaxPasswordLength } password } || !await users.CheckPasswordAsync(user, password))
             return Error(401, "InvalidCredentials");
         if (!await market.Withdraw(user.Id, c.RequestAborted)) return Error(503, "ServiceUnavailable");
         await c.SignOutAsync(IdentityConstants.ApplicationScheme);

@@ -21,6 +21,7 @@ services:
       Market__DailyResetLocalTime: '05:00' # 임의 지정: Asia/Seoul
       Market__JournalPath: /data/journal/market.jsonl
       Market__DatabasePath: /data/hoga.db
+      Market__KeysPath: /data/keys # REVIEW-8 재확인: 기본값(/app/data/keys)은 비root 컨테이너에서 쓸 수 없고 백업 대상과 다르다
       Operations__BackupDirectory: /data/backups
     volumes:
       - data:/data
