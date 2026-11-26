@@ -29,7 +29,8 @@ builder.Services.AddOptions<ForwardedHeadersOptions>().Configure<IConfiguration>
             .Any(range => network.PrefixLength >= range.PrefixLength && range.Contains(network.BaseAddress)))
         throw new InvalidOperationException("Market:TrustedProxyNetwork must be a private IPv4 Docker subnet.");
     options.KnownIPNetworks.Add(network);
-    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
+    // Caddy terminates TLS; without the forwarded scheme, Secure auth/antiforgery cookies fail with HTTP 500.
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
     options.ForwardLimit = 1; // Only the direct Caddy hop; never walk arbitrary client-supplied chains.
 });
 builder.Services.AddRateLimiter(options =>
@@ -54,6 +55,18 @@ app.CaptureMetricsPeer();
 app.UseWhen(context => context.Connection.RemoteIpAddress is not null, branch => branch.UseForwardedHeaders());
 app.UseRouting();
 app.UseMiddleware<SafeRequestLog>();
+app.Use(async (context, next) =>
+{
+    try { await next(context); }
+    catch (Exception ex) when (ex is not OperationCanceledException)
+    {
+        // Production logging allows only safe categories; record the failure type and route template, never messages.
+        var route = (context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText ?? "(unmatched)";
+        context.RequestServices.GetRequiredService<ILogger<SafeRequestLog>>()
+            .LogError("Unhandled {ExceptionType} on {Route}", ex.GetType().Name, route);
+        throw;
+    }
+});
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();

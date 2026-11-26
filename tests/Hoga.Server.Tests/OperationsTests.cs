@@ -43,6 +43,31 @@ public sealed class OperationsTests
     }
 
     [Fact]
+    public async Task ProductionCsrfWorksBehindTrustedTlsProxyOnly()
+    {
+        using var logs = new LogCapture();
+        using var app = new OperationsFactory(logs);
+        async Task<(int Status, string Cookie)> Csrf(string peer, string? proto)
+        {
+            var result = await app.Server.SendAsync(context =>
+            {
+                context.Connection.RemoteIpAddress = IPAddress.Parse(peer);
+                context.Request.Path = "/api/auth/csrf";
+                if (proto is not null) context.Request.Headers["X-Forwarded-Proto"] = proto;
+            });
+            return (result.Response.StatusCode, string.Join(';', result.Response.Headers.SetCookie.ToArray()));
+        }
+        // Caddy (trusted Docker subnet) terminates TLS and forwards the original scheme.
+        var proxied = await Csrf("172.18.0.9", "https");
+        Assert.Equal(200, proxied.Status);
+        Assert.Contains("secure", proxied.Cookie, StringComparison.OrdinalIgnoreCase);
+        // An untrusted client cannot claim HTTPS; plain HTTP in Production is refused and the failure is logged safely.
+        Assert.Equal(500, (await Csrf("203.0.113.9", "https")).Status);
+        Assert.Contains(logs.Entries, entry => entry.Text.Contains("Unhandled", StringComparison.Ordinal) &&
+            entry.Text.Contains("/api/auth/csrf", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task MetricsAreParseableAndCountAcceptedRejectedTradesAndBothStages()
     {
         using var app = new OperationsFactory();
